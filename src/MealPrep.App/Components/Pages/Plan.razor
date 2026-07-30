@@ -1,0 +1,271 @@
+@page "/plan"
+@attribute [Authorize]
+@inject MealPlannerService Planner
+
+<PageTitle>Wochenplan · Mahlzeit</PageTitle>
+
+<header class="page-header plan-header">
+    <div>
+        <p class="eyebrow">Wochenplan</p>
+        <h1>@WeekLabel</h1>
+    </div>
+    <button class="round-button" @onclick="SuggestWeek" aria-label="Woche automatisch füllen">✦</button>
+</header>
+
+<div class="week-switcher">
+    <button class="icon-button" @onclick="PreviousWeek" aria-label="Vorherige Woche">←</button>
+    <button class="week-pill" @onclick="CurrentWeek">Diese Woche</button>
+    <button class="icon-button" @onclick="NextWeek" aria-label="Nächste Woche">→</button>
+</div>
+
+@if (isLoading)
+{
+    <div class="skeleton-list"></div>
+}
+else
+{
+    <section class="plan-list">
+        @foreach (var date in WeekDays)
+        {
+            <article class="plan-day @(date == Today ? "is-today" : null)">
+                <div class="plan-date">
+                    <span>@date.ToString("ddd", GermanCulture)</span>
+                    <strong>@date.Day</strong>
+                </div>
+
+                <div class="plan-slots">
+                    @foreach (var mealType in MealTypes.All)
+                    {
+                        var entry = plan.FirstOrDefault(item =>
+                            item.Date == date && item.MealType == mealType);
+                        @if (entry is null)
+                        {
+                            <button class="empty-plan-card" @onclick="() => OpenPicker(date, mealType)">
+                                <span class="add-circle">+</span>
+                                <span>
+                                    <strong>@mealType planen</strong>
+                                    <small>Noch nichts ausgewählt</small>
+                                </span>
+                            </button>
+                        }
+                        else
+                        {
+                            <div class="planned-meal" style="@($"--meal-accent:{entry.Recipe.AccentColor}")">
+                                <button class="planned-meal-main" @onclick="() => OpenPicker(date, mealType)">
+                                    <span class="planned-thumb">
+                                        @if (entry.Recipe.ImageData is not null)
+                                        {
+                                            <img src="@($"/api/recipes/{entry.RecipeId}/image")" alt="" />
+                                        }
+                                        else
+                                        {
+                                            <i>@entry.Recipe.Emoji</i>
+                                        }
+                                    </span>
+                                    <span class="planned-copy">
+                                        <small>@mealType · @entry.Recipe.TotalMinutes Min.</small>
+                                        <strong>@entry.Recipe.Name</strong>
+                                        <span>@entry.Servings Portionen</span>
+                                    </span>
+                                </button>
+                                <button class="more-button"
+                                        @onclick="() => RemoveMeal(date, mealType)"
+                                        aria-label="@($"{entry.Recipe.Name} als {mealType} entfernen")">×</button>
+                            </div>
+                        }
+                    }
+                </div>
+            </article>
+        }
+    </section>
+
+    <button class="button button-secondary plan-suggest" @onclick="SuggestWeek">
+        <span aria-hidden="true">✦</span>
+        Freie Tage automatisch füllen
+    </button>
+}
+
+@if (pickerDate is not null)
+{
+    <div class="sheet-backdrop" @onclick="ClosePicker">
+        <section class="bottom-sheet"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-label="@($"{pickerMealType} auswählen")"
+                 @onclick:stopPropagation>
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+                <div>
+                    <p class="eyebrow">@pickerDate.Value.ToString("dddd, d. MMMM", GermanCulture)</p>
+                    <h2>@pickerMealType auswählen</h2>
+                </div>
+                <button class="icon-button" @onclick="ClosePicker" aria-label="Schließen">×</button>
+            </div>
+            <div class="picker-recipes">
+                @foreach (var recipe in recipes)
+                {
+                    <div class="picker-recipe @(recipe.IsFavorite ? "is-favorite" : null)">
+                        <button class="picker-recipe-main" @onclick="() => ChooseRecipe(recipe.Id)">
+                            <span class="picker-art" style="@($"--meal-accent:{recipe.AccentColor}")">
+                                @if (recipe.ImageData is not null)
+                                {
+                                    <img src="@($"/api/recipes/{recipe.Id}/image")" alt="" />
+                                }
+                                else
+                                {
+                                    <i>@recipe.Emoji</i>
+                                }
+                            </span>
+                            <span>
+                                <strong>@recipe.Name</strong>
+                                <small>@recipe.TotalMinutes Min. · @recipe.Tags.Split(',')[0]</small>
+                            </span>
+                            <span class="picker-arrow">→</span>
+                        </button>
+                        <button class="picker-favorite"
+                                @onclick="() => ToggleFavorite(recipe)"
+                                aria-label="@(recipe.IsFavorite ? $"{recipe.Name} aus Favoriten entfernen" : $"{recipe.Name} zu Favoriten hinzufügen")"
+                                aria-pressed="@recipe.IsFavorite">
+                            @(recipe.IsFavorite ? "★" : "☆")
+                        </button>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo GermanCulture =
+        System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+
+    private readonly DateOnly Today = DateOnly.FromDateTime(DateTime.Now);
+    private DateOnly weekStart;
+    private DateOnly? pickerDate;
+    private string pickerMealType = MealTypes.Lunch;
+    private List<MealPlanEntry> plan = [];
+    private List<Recipe> recipes = [];
+    private HouseholdSettings settings = new();
+    private bool isLoading = true;
+
+    private IEnumerable<DateOnly> WeekDays => Enumerable.Range(0, 7).Select(weekStart.AddDays);
+    private string WeekLabel =>
+        $"{weekStart:dd. MMM} – {weekStart.AddDays(6):dd. MMM}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        weekStart = MealPlannerService.StartOfWeek(Today);
+        recipes = await Planner.GetRecipesAsync();
+        settings = await Planner.GetSettingsAsync();
+        await LoadPlan();
+    }
+
+    private async Task LoadPlan()
+    {
+        isLoading = true;
+        plan = await Planner.GetWeekPlanAsync(weekStart);
+        isLoading = false;
+    }
+
+    private void OpenPicker(DateOnly date, string mealType)
+    {
+        pickerDate = date;
+        pickerMealType = mealType;
+    }
+
+    private void ClosePicker() => pickerDate = null;
+
+    private async Task ChooseRecipe(int recipeId)
+    {
+        if (pickerDate is null)
+        {
+            return;
+        }
+
+        await Planner.AssignRecipeAsync(pickerDate.Value, pickerMealType, recipeId);
+        pickerDate = null;
+        await LoadPlan();
+    }
+
+    private async Task RemoveMeal(DateOnly date, string mealType)
+    {
+        await Planner.RemoveMealAsync(date, mealType);
+        await LoadPlan();
+    }
+
+    private async Task ToggleFavorite(Recipe recipe)
+    {
+        var isFavorite = await Planner.ToggleFavoriteAsync(recipe.Id);
+        if (isFavorite is null)
+        {
+            return;
+        }
+
+        recipe.IsFavorite = isFavorite.Value;
+        recipes = recipes
+            .OrderByDescending(item => item.IsFavorite)
+            .ThenBy(item => item.Name)
+            .ToList();
+    }
+
+    private async Task SuggestWeek()
+    {
+        if (recipes.Count == 0)
+        {
+            return;
+        }
+
+        var usedIds = plan.Select(entry => entry.RecipeId).ToHashSet();
+        var index = 0;
+        foreach (var mealType in MealTypes.All)
+        {
+            var plannedDays = mealType == MealTypes.Lunch
+                ? settings.PlannedLunchesPerWeek
+                : settings.PlannedDinnersPerWeek;
+            foreach (var date in WeekDays.Take(plannedDays))
+            {
+                if (plan.Any(entry => entry.Date == date && entry.MealType == mealType))
+                {
+                    continue;
+                }
+
+                var candidates = recipes
+                    .Where(recipe => MealPlannerService.IsRecipeAllowed(recipe, settings, date))
+                    .OrderBy(recipe => usedIds.Contains(recipe.Id))
+                    .ThenByDescending(recipe => recipe.IsFavorite)
+                    .ThenByDescending(recipe => MealPlannerService.PreferenceScore(recipe, settings))
+                    .ThenBy(recipe => recipe.LastCookedAtUtc)
+                    .ToList();
+                if (candidates.Count == 0)
+                {
+                    continue;
+                }
+
+                var selectedRecipe = candidates[index % candidates.Count];
+                await Planner.AssignRecipeAsync(date, mealType, selectedRecipe.Id);
+                usedIds.Add(selectedRecipe.Id);
+                index++;
+            }
+        }
+
+        await LoadPlan();
+    }
+
+    private async Task PreviousWeek()
+    {
+        weekStart = weekStart.AddDays(-7);
+        await LoadPlan();
+    }
+
+    private async Task NextWeek()
+    {
+        weekStart = weekStart.AddDays(7);
+        await LoadPlan();
+    }
+
+    private async Task CurrentWeek()
+    {
+        weekStart = MealPlannerService.StartOfWeek(Today);
+        await LoadPlan();
+    }
+}

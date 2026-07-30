@@ -1,0 +1,143 @@
+@page "/cook/{Id:int}"
+@attribute [Authorize]
+@inject MealPlannerService Planner
+@inject NavigationManager Navigation
+@inject IJSRuntime Js
+
+<PageTitle>Kochmodus · Mahlzeit</PageTitle>
+
+@if (recipe is null)
+{
+    <div class="skeleton-card"></div>
+}
+else
+{
+    <div class="cook-mode">
+        <header class="cook-header">
+            <button class="icon-button cook-close" @onclick="Close" aria-label="Kochmodus schließen">×</button>
+            <div class="cook-progress-copy">
+                <span>Schritt @DisplayStep von @recipe.Steps.Count</span>
+                <div class="cook-progress"><i style="@($"width:{ProgressPercent}%")"></i></div>
+            </div>
+            <button class="icon-button wake-button @(wakeLockEnabled ? "active" : null)"
+                    @onclick="ToggleWakeLock"
+                    aria-label="Bildschirm aktiv halten">☀</button>
+        </header>
+
+        <section class="cook-title">
+            <p class="eyebrow">@recipe.Name</p>
+            <h1>@(isComplete ? "Geschafft!" : $"Schritt {DisplayStep}")</h1>
+        </section>
+
+        @if (!isComplete)
+        {
+            var step = recipe.Steps.OrderBy(item => item.StepNumber).ElementAt(currentStep);
+            <section class="cook-step-card">
+                <span class="cook-step-number">@step.StepNumber</span>
+                <p>@step.Instruction</p>
+            </section>
+
+            <details class="cook-ingredients">
+                <summary>Zutaten einblenden <span>＋</span></summary>
+                <ul>
+                    @foreach (var ingredient in recipe.Ingredients)
+                    {
+                        <li>
+                            <span>@ingredient.Name</span>
+                            <strong>@MealPlannerService.FormatQuantity(ingredient.Quantity) @ingredient.Unit</strong>
+                        </li>
+                    }
+                </ul>
+            </details>
+        }
+        else
+        {
+            <section class="cook-complete">
+                <div class="complete-mark">✓</div>
+                <h2>Guten Appetit!</h2>
+                <p>@recipe.Name ist fertig. Der Wochenplan und deine Einkaufsliste sind bereits aktualisiert.</p>
+            </section>
+        }
+
+        <footer class="cook-footer">
+            @if (!isComplete)
+            {
+                <button class="button button-ghost" @onclick="PreviousStep" disabled="@(currentStep == 0)">Zurück</button>
+                <button class="button button-primary" @onclick="NextStep">
+                    @(currentStep == recipe.Steps.Count - 1 ? "Fertig" : "Nächster Schritt")
+                    <span aria-hidden="true">→</span>
+                </button>
+            }
+            else
+            {
+                <button class="button button-primary full-width" @onclick="Close">Zur Übersicht</button>
+            }
+        </footer>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    [SupplyParameterFromQuery(Name = "mealType")]
+    public string? MealType { get; set; }
+
+    private Recipe? recipe;
+    private int currentStep;
+    private bool isComplete;
+    private bool wakeLockEnabled;
+
+    private int DisplayStep => Math.Min(currentStep + 1, recipe?.Steps.Count ?? 1);
+    private int ProgressPercent => isComplete
+        ? 100
+        : (int)Math.Round(DisplayStep / (double)Math.Max(1, recipe?.Steps.Count ?? 1) * 100);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        recipe = await Planner.GetRecipeAsync(Id);
+    }
+
+    private void PreviousStep()
+    {
+        if (currentStep > 0)
+        {
+            currentStep--;
+        }
+    }
+
+    private async Task NextStep()
+    {
+        if (recipe is null)
+        {
+            return;
+        }
+
+        if (currentStep < recipe.Steps.Count - 1)
+        {
+            currentStep++;
+        }
+        else
+        {
+            isComplete = true;
+            var plannedMealType = MealTypes.IsValid(MealType) ? MealType! : MealTypes.Dinner;
+            await Planner.MarkCookedAsync(
+                Id,
+                DateOnly.FromDateTime(DateTime.Now),
+                plannedMealType);
+        }
+    }
+
+    private async Task ToggleWakeLock()
+    {
+        wakeLockEnabled = await Js.InvokeAsync<bool>("mealPrep.toggleWakeLock");
+    }
+
+    private async Task Close()
+    {
+        if (wakeLockEnabled)
+        {
+            await Js.InvokeVoidAsync("mealPrep.releaseWakeLock");
+        }
+
+        Navigation.NavigateTo("/");
+    }
+}

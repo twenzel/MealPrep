@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+.vs/
+.vscode/
+.idea/
+.env
+*.user
+*.suo
+TestResults/
+coverage/
+artifacts/
+*.log
+*.db
+*.db-shm
+*.db-wal

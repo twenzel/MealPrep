@@ -1,0 +1,66 @@
+name: mealprep
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: mealprep-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mealprep
+      POSTGRES_USER: mealprep
+      POSTGRES_PASSWORD: devMealPrep
+      #${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      TZ: Europe/Berlin
+    ports:
+      - "5432:5432"
+    volumes:
+      - mealprep-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mealprep -d mealprep"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    security_opt:
+      - no-new-privileges:true
+
+  keys-init:
+    image: postgres:17-alpine
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R 1654:1654 /keys"]
+    volumes:
+      - mealprep-keys:/keys
+    security_opt:
+      - no-new-privileges:true
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mealprep-app:latest
+    container_name: mealprep-app
+    #restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      keys-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 8080
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=mealprep;Username=mealprep;Password=${POSTGRES_PASSWORD}
+      DataProtection__KeysPath: /keys
+      TZ: Europe/Berlin
+    ports:
+      - "${APP_PORT:-8088}:8080"
+    volumes:
+      - mealprep-keys:/keys
+    tmpfs:
+      - /tmp
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  mealprep-db:
+  mealprep-keys:

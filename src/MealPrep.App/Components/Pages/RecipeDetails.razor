@@ -1,0 +1,133 @@
+@page "/recipes/{Id:int}"
+@attribute [Authorize]
+@inject MealPlannerService Planner
+@inject NavigationManager Navigation
+
+<PageTitle>@(recipe?.Name ?? "Rezept") · Mahlzeit</PageTitle>
+
+@if (recipe is null)
+{
+    <div class="skeleton-card"></div>
+}
+else
+{
+    <header class="detail-topbar">
+        <button class="icon-button" @onclick="GoBack" aria-label="Zurück">←</button>
+        <span>Rezept</span>
+        <button class="icon-button" @onclick="EditRecipe" aria-label="Rezept bearbeiten">✎</button>
+    </header>
+
+    <section class="recipe-hero" style="@($"--meal-accent:{recipe.AccentColor}")">
+        @if (recipe.ImageData is not null)
+        {
+            <img src="@($"/api/recipes/{recipe.Id}/image")" alt="@recipe.Name" />
+        }
+        else
+        {
+            <span>@recipe.Emoji</span>
+        }
+    </section>
+
+    <section class="recipe-detail-copy">
+        <p class="eyebrow">@recipe.Tags.Replace(",", " ·")</p>
+        <h1>@recipe.Name</h1>
+        <p class="lead">@recipe.Description</p>
+
+        @if (!string.IsNullOrWhiteSpace(recipe.SourceUrl))
+        {
+            <a class="recipe-source-link"
+               href="@recipe.SourceUrl"
+               target="_blank"
+               rel="noreferrer">
+                <span aria-hidden="true">◎</span>
+                Original auf Instagram öffnen
+                <i aria-hidden="true">↗</i>
+            </a>
+        }
+
+        <button class="favorite-pill @(recipe.IsFavorite ? "is-favorite" : null)"
+                @onclick="ToggleFavorite"
+                aria-pressed="@recipe.IsFavorite">
+            <span aria-hidden="true">@(recipe.IsFavorite ? "★" : "☆")</span>
+            @(recipe.IsFavorite ? "Als Favorit gespeichert" : "Zu Favoriten hinzufügen")
+        </button>
+
+        <div class="detail-stats">
+            <div><strong>@recipe.TotalMinutes</strong><span>Minuten</span></div>
+            <div><strong>@recipe.Servings</strong><span>Portionen</span></div>
+            <div><strong>@recipe.Ingredients.Count</strong><span>Zutaten</span></div>
+        </div>
+    </section>
+
+    <section class="detail-section">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Vorbereitung</p>
+                <h2>Zutaten</h2>
+            </div>
+            <span class="serving-badge">@recipe.Servings Personen</span>
+        </div>
+        <ul class="ingredient-list">
+            @foreach (var ingredient in recipe.Ingredients)
+            {
+                <li>
+                    <span>@MealPlannerService.FormatQuantity(ingredient.Quantity) @ingredient.Unit</span>
+                    <strong>@ingredient.Name</strong>
+                </li>
+            }
+        </ul>
+    </section>
+
+    <section class="detail-section">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Los geht’s</p>
+                <h2>Zubereitung</h2>
+            </div>
+        </div>
+        <ol class="step-preview">
+            @foreach (var step in recipe.Steps)
+            {
+                <li>
+                    <span>@step.StepNumber</span>
+                    <p>@step.Instruction</p>
+                </li>
+            }
+        </ol>
+    </section>
+
+    <div class="sticky-action">
+        <button class="button button-primary" @onclick="StartCooking">
+            Kochmodus starten
+            <span aria-hidden="true">→</span>
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private Recipe? recipe;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        recipe = await Planner.GetRecipeAsync(Id);
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/recipes");
+    private void EditRecipe() => Navigation.NavigateTo($"/recipes/{Id}/edit");
+    private void StartCooking() => Navigation.NavigateTo($"/cook/{Id}");
+
+    private async Task ToggleFavorite()
+    {
+        if (recipe is null)
+        {
+            return;
+        }
+
+        var isFavorite = await Planner.ToggleFavoriteAsync(recipe.Id);
+        if (isFavorite is not null)
+        {
+            recipe.IsFavorite = isFavorite.Value;
+        }
+    }
+}

@@ -1,0 +1,250 @@
+@page "/recipes"
+@attribute [Authorize]
+@inject MealPlannerService Planner
+@inject NavigationManager Navigation
+
+<PageTitle>Rezepte · Mahlzeit</PageTitle>
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow">Deine Sammlung</p>
+        <h1>Rezepte</h1>
+    </div>
+    <div class="page-header-actions">
+        <a class="round-button instagram-import-button"
+           href="/recipes/import/instagram"
+           aria-label="Rezept von Instagram importieren">◎</a>
+        <button class="round-button" @onclick="OpenAddRecipe" aria-label="Neues Rezept">+</button>
+    </div>
+</header>
+
+<div class="search-box">
+    <span aria-hidden="true">⌕</span>
+    <input @bind="search" @bind:event="oninput" placeholder="Gericht, Zutat oder Tag" aria-label="Rezepte durchsuchen" />
+    <button @onclick="SearchRecipes" aria-label="Suche starten">→</button>
+</div>
+
+<div class="filter-chips" aria-label="Rezeptfilter">
+    @foreach (var tag in Tags)
+    {
+        <button class="filter-chip @(activeTag == tag ? "active" : null)" @onclick="() => SetTag(tag)">@tag</button>
+    }
+</div>
+
+@if (isLoading)
+{
+    <div class="skeleton-grid"></div>
+}
+else
+{
+    <div class="recipe-count">@FilteredRecipes.Count Rezept@(FilteredRecipes.Count == 1 ? "" : "e")</div>
+    <section class="recipe-grid">
+        @foreach (var recipe in FilteredRecipes)
+        {
+            <article class="recipe-card" @onclick="() => OpenRecipe(recipe.Id)">
+                <div class="recipe-card-art" style="@($"--meal-accent:{recipe.AccentColor}")">
+                    @if (recipe.ImageData is not null)
+                    {
+                        <img src="@($"/api/recipes/{recipe.Id}/image")" alt="@recipe.Name" />
+                    }
+                    else
+                    {
+                        <span>@recipe.Emoji</span>
+                    }
+                    <button class="recipe-favorite @(recipe.IsFavorite ? "is-favorite" : null)"
+                            @onclick="() => ToggleFavorite(recipe)"
+                            @onclick:stopPropagation
+                            aria-label="@(recipe.IsFavorite ? $"{recipe.Name} aus Favoriten entfernen" : $"{recipe.Name} zu Favoriten hinzufügen")"
+                            aria-pressed="@recipe.IsFavorite">
+                        @(recipe.IsFavorite ? "★" : "☆")
+                    </button>
+                    <small>@recipe.TotalMinutes Min.</small>
+                </div>
+                <div class="recipe-card-body">
+                    <h2>@recipe.Name</h2>
+                    <p>@recipe.Description</p>
+                    <div class="recipe-card-footer">
+                        <span>@recipe.Tags.Split(',')[0]</span>
+                        <span aria-hidden="true">→</span>
+                    </div>
+                </div>
+            </article>
+        }
+    </section>
+}
+
+@if (showAddRecipe)
+{
+    <div class="sheet-backdrop" @onclick="CloseAddRecipe">
+        <section class="bottom-sheet add-recipe-sheet" role="dialog" aria-modal="true" aria-label="Rezept hinzufügen" @onclick:stopPropagation>
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+                <div>
+                    <p class="eyebrow">Neue Idee</p>
+                    <h2>Rezept hinzufügen</h2>
+                </div>
+                <button class="icon-button" @onclick="CloseAddRecipe" aria-label="Schließen">×</button>
+            </div>
+
+            <EditForm Model="draft" OnValidSubmit="SaveRecipe" class="recipe-form">
+                <div class="form-field">
+                    <label for="recipe-name">Name</label>
+                    <InputText id="recipe-name" @bind-Value="draft.Name" placeholder="z. B. Pilzrisotto" required />
+                </div>
+                <div class="form-field">
+                    <label for="recipe-description">Kurzbeschreibung</label>
+                    <InputTextArea id="recipe-description" @bind-Value="draft.Description" placeholder="Was macht dieses Gericht besonders?" />
+                </div>
+                <div class="form-row">
+                    <div class="form-field">
+                        <label for="prep-time">Vorbereitung</label>
+                        <InputNumber id="prep-time" @bind-Value="draft.PrepMinutes" />
+                    </div>
+                    <div class="form-field">
+                        <label for="cook-time">Kochen</label>
+                        <InputNumber id="cook-time" @bind-Value="draft.CookMinutes" />
+                    </div>
+                    <div class="form-field">
+                        <label for="servings">Portionen</label>
+                        <InputNumber id="servings" @bind-Value="draft.Servings" />
+                    </div>
+                </div>
+                <div class="form-field">
+                    <label for="recipe-tags">Tags</label>
+                    <InputText id="recipe-tags" @bind-Value="draft.Tags" placeholder="schnell, vegetarisch, meal prep" />
+                </div>
+                <div class="form-field">
+                    <label for="ingredients">Zutaten</label>
+                    <InputTextArea id="ingredients" @bind-Value="draft.Ingredients"
+                                   placeholder="180 | g | Orzo | Nudeln & Reis&#10;1 | Stk. | Zitrone | Obst & Gemüse" />
+                    <small>Eine Zutat pro Zeile: Menge | Einheit | Name | Abteilung</small>
+                </div>
+                <div class="form-field">
+                    <label for="steps">Zubereitung</label>
+                    <InputTextArea id="steps" @bind-Value="draft.Steps"
+                                   placeholder="Gemüse schneiden.&#10;Alles zusammen anbraten.&#10;Abschmecken und servieren." />
+                    <small>Ein Arbeitsschritt pro Zeile</small>
+                </div>
+                <label class="image-upload">
+                    <InputFile OnChange="HandleImage" accept="image/jpeg,image/png,image/webp" />
+                    <span class="upload-symbol">@((draft.ImageData is null) ? "＋" : "✓")</span>
+                    <span>
+                        <strong>@((draft.ImageData is null) ? "Foto hinzufügen" : "Foto ausgewählt")</strong>
+                        <small>Das Bild wird direkt in PostgreSQL gespeichert · max. 4 MB</small>
+                    </span>
+                </label>
+                @if (!string.IsNullOrWhiteSpace(formError))
+                {
+                    <p class="form-error">@formError</p>
+                }
+                <button class="button button-primary form-submit" type="submit" disabled="@isSaving">
+                    @(isSaving ? "Wird gespeichert …" : "Rezept speichern")
+                </button>
+            </EditForm>
+        </section>
+    </div>
+}
+
+@code {
+    private readonly string[] Tags = ["Alle", "Favoriten", "Schnell", "Vegetarisch", "Meal Prep"];
+    private List<Recipe> recipes = [];
+    private string activeTag = "Alle";
+    private string search = string.Empty;
+    private bool isLoading = true;
+    private bool showAddRecipe;
+    private bool isSaving;
+    private string? formError;
+    private RecipeDraft draft = CreateDraft();
+
+    private List<Recipe> FilteredRecipes => recipes
+        .Where(recipe => activeTag switch
+        {
+            "Alle" => true,
+            "Favoriten" => recipe.IsFavorite,
+            _ => recipe.Tags.Contains(activeTag, StringComparison.OrdinalIgnoreCase)
+        })
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRecipes();
+    }
+
+    private async Task LoadRecipes()
+    {
+        isLoading = true;
+        recipes = await Planner.GetRecipesAsync(search);
+        isLoading = false;
+    }
+
+    private async Task SearchRecipes() => await LoadRecipes();
+
+    private void SetTag(string tag) => activeTag = tag;
+    private void OpenRecipe(int id) => Navigation.NavigateTo($"/recipes/{id}");
+    private void OpenAddRecipe() => showAddRecipe = true;
+
+    private async Task ToggleFavorite(Recipe recipe)
+    {
+        var isFavorite = await Planner.ToggleFavoriteAsync(recipe.Id);
+        if (isFavorite is null)
+        {
+            return;
+        }
+
+        recipe.IsFavorite = isFavorite.Value;
+        recipes = recipes
+            .OrderByDescending(item => item.IsFavorite)
+            .ThenBy(item => item.Name)
+            .ToList();
+    }
+
+    private void CloseAddRecipe()
+    {
+        showAddRecipe = false;
+        formError = null;
+    }
+
+    private async Task HandleImage(InputFileChangeEventArgs eventArgs)
+    {
+        try
+        {
+            var file = eventArgs.File;
+            await using var stream = file.OpenReadStream(4 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            draft.ImageData = memory.ToArray();
+            draft.ImageContentType = file.ContentType;
+            formError = null;
+        }
+        catch (IOException)
+        {
+            formError = "Das Bild ist größer als 4 MB.";
+        }
+    }
+
+    private async Task SaveRecipe()
+    {
+        if (string.IsNullOrWhiteSpace(draft.Name) ||
+            string.IsNullOrWhiteSpace(draft.Ingredients) ||
+            string.IsNullOrWhiteSpace(draft.Steps))
+        {
+            formError = "Bitte Name, Zutaten und Zubereitung ausfüllen.";
+            return;
+        }
+
+        isSaving = true;
+        var id = await Planner.AddRecipeAsync(draft);
+        showAddRecipe = false;
+        draft = CreateDraft();
+        await LoadRecipes();
+        isSaving = false;
+        Navigation.NavigateTo($"/recipes/{id}");
+    }
+
+    private static RecipeDraft CreateDraft() => new()
+    {
+        PrepMinutes = 10,
+        CookMinutes = 20,
+        Servings = 2
+    };
+}

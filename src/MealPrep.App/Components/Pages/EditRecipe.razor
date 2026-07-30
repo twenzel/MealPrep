@@ -1,0 +1,213 @@
+@page "/recipes/{Id:int}/edit"
+@attribute [Authorize]
+@inject MealPlannerService Planner
+@inject NavigationManager Navigation
+
+<PageTitle>@(recipe is null ? "Rezept bearbeiten" : $"{recipe.Name} bearbeiten") · Mahlzeit</PageTitle>
+
+@if (isLoading)
+{
+    <div class="skeleton-card" aria-label="Rezept wird geladen"></div>
+}
+else if (recipe is null)
+{
+    <section class="empty-today">
+        <span class="empty-illustration">🍽️</span>
+        <p class="eyebrow">Nicht gefunden</p>
+        <h2>Dieses Rezept gibt es nicht.</h2>
+        <a class="button button-primary" href="/recipes">Zu den Rezepten</a>
+    </section>
+}
+else
+{
+    <header class="detail-topbar">
+        <button class="icon-button" type="button" @onclick="Cancel" aria-label="Bearbeitung abbrechen">←</button>
+        <span>Rezept bearbeiten</span>
+        <span class="edit-header-symbol" aria-hidden="true">✎</span>
+    </header>
+
+    <EditForm Model="draft" OnValidSubmit="SaveRecipe" class="recipe-form recipe-editor">
+        <div class="form-field">
+            <label for="edit-recipe-name">Name</label>
+            <InputText id="edit-recipe-name"
+                       @bind-Value="draft.Name"
+                       placeholder="z. B. Pilzrisotto"
+                       maxlength="160"
+                       required />
+        </div>
+        <div class="form-field">
+            <label for="edit-recipe-description">Kurzbeschreibung</label>
+            <InputTextArea id="edit-recipe-description"
+                           @bind-Value="draft.Description"
+                           maxlength="600"
+                           placeholder="Was macht dieses Gericht besonders?" />
+        </div>
+        <div class="form-row">
+            <div class="form-field">
+                <label for="edit-prep-time">Vorbereitung</label>
+                <InputNumber id="edit-prep-time" @bind-Value="draft.PrepMinutes" min="0" max="720" />
+            </div>
+            <div class="form-field">
+                <label for="edit-cook-time">Kochen</label>
+                <InputNumber id="edit-cook-time" @bind-Value="draft.CookMinutes" min="0" max="720" />
+            </div>
+            <div class="form-field">
+                <label for="edit-servings">Portionen</label>
+                <InputNumber id="edit-servings" @bind-Value="draft.Servings" min="1" max="12" />
+            </div>
+        </div>
+        <div class="form-field">
+            <label for="edit-recipe-tags">Tags</label>
+            <InputText id="edit-recipe-tags"
+                       @bind-Value="draft.Tags"
+                       maxlength="400"
+                       placeholder="schnell, vegetarisch, meal prep" />
+        </div>
+        @if (!string.IsNullOrWhiteSpace(draft.SourceUrl))
+        {
+            <div class="form-field">
+                <label for="edit-source-url">Originalquelle</label>
+                <InputText id="edit-source-url"
+                           @bind-Value="draft.SourceUrl"
+                           maxlength="600"
+                           inputmode="url" />
+            </div>
+        }
+        <div class="form-field">
+            <label for="edit-ingredients">Zutaten</label>
+            <InputTextArea id="edit-ingredients"
+                           @bind-Value="draft.Ingredients"
+                           placeholder="180 | g | Orzo | Nudeln & Reis&#10;1 | Stk. | Zitrone | Obst & Gemüse" />
+            <small>Eine Zutat pro Zeile: Menge | Einheit | Name | Abteilung</small>
+        </div>
+        <div class="form-field">
+            <label for="edit-steps">Zubereitung</label>
+            <InputTextArea id="edit-steps"
+                           @bind-Value="draft.Steps"
+                           placeholder="Gemüse schneiden.&#10;Alles zusammen anbraten.&#10;Abschmecken und servieren." />
+            <small>Ein Arbeitsschritt pro Zeile</small>
+        </div>
+
+        @if (draft.ImageData is not null)
+        {
+            <div class="editor-image-preview">
+                <img src="@(imagePreviewUrl ?? $"/api/recipes/{Id}/image")" alt="Aktuelles Rezeptfoto" />
+                <div>
+                    <strong>@(imagePreviewUrl is null ? "Aktuelles Foto" : "Neues Foto")</strong>
+                    <small>Du kannst es ersetzen oder entfernen.</small>
+                </div>
+                <button class="icon-button" type="button" @onclick="RemoveImage" aria-label="Rezeptfoto entfernen">×</button>
+            </div>
+        }
+
+        <label class="image-upload">
+            <InputFile OnChange="HandleImage" accept="image/jpeg,image/png,image/webp" />
+            <span class="upload-symbol">@(draft.ImageData is null ? "＋" : "↻")</span>
+            <span>
+                <strong>@(draft.ImageData is null ? "Foto hinzufügen" : "Foto ersetzen")</strong>
+                <small>JPEG, PNG oder WebP · max. 4 MB</small>
+            </span>
+        </label>
+
+        @if (!string.IsNullOrWhiteSpace(formError))
+        {
+            <p class="form-error" role="alert">@formError</p>
+        }
+
+        <div class="editor-actions">
+            <button class="button button-ghost" type="button" @onclick="Cancel">Abbrechen</button>
+            <button class="button button-primary" type="submit" disabled="@isSaving">
+                @(isSaving ? "Wird gespeichert …" : "Änderungen speichern")
+            </button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private static readonly HashSet<string> AllowedImageTypes =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+        };
+
+    [Parameter] public int Id { get; set; }
+
+    private Recipe? recipe;
+    private RecipeDraft draft = new();
+    private bool isLoading = true;
+    private bool isSaving;
+    private string? formError;
+    private string? imagePreviewUrl;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        recipe = await Planner.GetRecipeAsync(Id);
+        if (recipe is not null)
+        {
+            draft = MealPlannerService.CreateRecipeDraft(recipe);
+        }
+
+        isLoading = false;
+    }
+
+    private async Task HandleImage(InputFileChangeEventArgs eventArgs)
+    {
+        try
+        {
+            var file = eventArgs.File;
+            if (!AllowedImageTypes.Contains(file.ContentType))
+            {
+                formError = "Bitte ein Bild im Format JPEG, PNG oder WebP auswählen.";
+                return;
+            }
+
+            await using var stream = file.OpenReadStream(4 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            draft.ImageData = memory.ToArray();
+            draft.ImageContentType = file.ContentType;
+            imagePreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(draft.ImageData)}";
+            formError = null;
+        }
+        catch (IOException)
+        {
+            formError = "Das Bild ist größer als 4 MB.";
+        }
+    }
+
+    private void RemoveImage()
+    {
+        draft.ImageData = null;
+        draft.ImageContentType = null;
+        imagePreviewUrl = null;
+        formError = null;
+    }
+
+    private async Task SaveRecipe()
+    {
+        if (string.IsNullOrWhiteSpace(draft.Name) ||
+            string.IsNullOrWhiteSpace(draft.Ingredients) ||
+            string.IsNullOrWhiteSpace(draft.Steps))
+        {
+            formError = "Bitte Name, Zutaten und Zubereitung ausfüllen.";
+            return;
+        }
+
+        isSaving = true;
+        var updated = await Planner.UpdateRecipeAsync(Id, draft);
+        isSaving = false;
+        if (!updated)
+        {
+            recipe = null;
+            formError = "Das Rezept wurde nicht gefunden.";
+            return;
+        }
+
+        Navigation.NavigateTo($"/recipes/{Id}");
+    }
+
+    private void Cancel() => Navigation.NavigateTo($"/recipes/{Id}");
+}

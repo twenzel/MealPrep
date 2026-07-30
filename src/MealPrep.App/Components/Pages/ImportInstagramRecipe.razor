@@ -1,0 +1,290 @@
+@page "/recipes/import/instagram"
+@attribute [Authorize]
+@inject InstagramRecipeImportService InstagramImporter
+@inject MealPlannerService Planner
+@inject NavigationManager Navigation
+
+<PageTitle>Von Instagram importieren · Mahlzeit</PageTitle>
+
+<header class="detail-topbar">
+    <button class="icon-button" type="button" @onclick="GoBack" aria-label="Zurück zu den Rezepten">←</button>
+    <span>Instagram-Import</span>
+    <span class="instagram-header-symbol" aria-hidden="true">◎</span>
+</header>
+
+@if (draft is null)
+{
+    <section class="instagram-import-hero">
+        <span aria-hidden="true">◎</span>
+        <div>
+            <p class="eyebrow">Rezept übernehmen</p>
+            <h1>Instagram-Post importieren</h1>
+            <p>Aus Link und Bildunterschrift wird ein Entwurf, den du vor dem Speichern vollständig prüfen kannst.</p>
+        </div>
+    </section>
+
+    <section class="instagram-import-card">
+        <div class="form-field">
+            <label for="instagram-url">Link zum Post oder Reel</label>
+            <InputText id="instagram-url"
+                       @bind-Value="sourceUrl"
+                       inputmode="url"
+                       autocomplete="url"
+                       placeholder="https://www.instagram.com/reel/…" />
+        </div>
+
+        <div class="instagram-divider"><span>optional, aber zuverlässiger</span></div>
+
+        <div class="form-field">
+            <label for="instagram-caption">Bildunterschrift des Posts</label>
+            <InputTextArea id="instagram-caption"
+                           class="instagram-caption"
+                           @bind-Value="copiedCaption"
+                           placeholder="Rezepttext aus Instagram hier einfügen …" />
+            <small>Wenn Instagram den öffentlichen Text nicht freigibt, kopiere ihn direkt aus der App und füge ihn hier ein.</small>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(importError))
+        {
+            <p class="form-error" role="alert">@importError</p>
+        }
+
+        <button class="button button-primary full-width"
+                type="button"
+                @onclick="CreateDraft"
+                disabled="@(isImporting || string.IsNullOrWhiteSpace(sourceUrl))">
+            @(isImporting ? "Post wird gelesen …" : "Rezeptentwurf erstellen")
+            <span aria-hidden="true">→</span>
+        </button>
+
+        <div class="instagram-import-note">
+            <span aria-hidden="true">ⓘ</span>
+            <p>Private Posts und manche Reels können nicht automatisch gelesen werden. Es wird kein Instagram-Passwort benötigt oder gespeichert.</p>
+        </div>
+    </section>
+}
+else
+{
+    <section class="import-result-heading">
+        <div>
+            <p class="eyebrow">Import erkannt</p>
+            <h1>Entwurf prüfen</h1>
+            <p>Zutaten und Mengen können in Bildunterschriften uneinheitlich sein. Bitte kontrolliere alle Felder.</p>
+        </div>
+        <button class="button button-ghost" type="button" @onclick="ResetImport">Anderen Post wählen</button>
+    </section>
+
+    @if (string.IsNullOrWhiteSpace(draft.Ingredients) || string.IsNullOrWhiteSpace(draft.Steps))
+    {
+        <div class="import-warning" role="status">
+            <span aria-hidden="true">!</span>
+            <p>Nicht alle Rezeptabschnitte wurden eindeutig erkannt. Ergänze die leeren Felder vor dem Speichern.</p>
+        </div>
+    }
+
+    <EditForm Model="draft" OnValidSubmit="SaveRecipe" class="recipe-form recipe-editor">
+        <div class="import-source-card">
+            <span aria-hidden="true">◎</span>
+            <div>
+                <strong>Original auf Instagram</strong>
+                <a href="@draft.SourceUrl" target="_blank" rel="noreferrer">Post öffnen ↗</a>
+            </div>
+        </div>
+
+        <div class="form-field">
+            <label for="import-recipe-name">Name</label>
+            <InputText id="import-recipe-name"
+                       @bind-Value="draft.Name"
+                       maxlength="160"
+                       required />
+        </div>
+        <div class="form-field">
+            <label for="import-recipe-description">Kurzbeschreibung</label>
+            <InputTextArea id="import-recipe-description"
+                           @bind-Value="draft.Description"
+                           maxlength="600" />
+        </div>
+        <div class="form-row">
+            <div class="form-field">
+                <label for="import-prep-time">Vorbereitung</label>
+                <InputNumber id="import-prep-time" @bind-Value="draft.PrepMinutes" min="0" max="720" />
+            </div>
+            <div class="form-field">
+                <label for="import-cook-time">Kochen</label>
+                <InputNumber id="import-cook-time" @bind-Value="draft.CookMinutes" min="0" max="720" />
+            </div>
+            <div class="form-field">
+                <label for="import-servings">Portionen</label>
+                <InputNumber id="import-servings" @bind-Value="draft.Servings" min="1" max="12" />
+            </div>
+        </div>
+        <div class="form-field">
+            <label for="import-recipe-tags">Tags</label>
+            <InputText id="import-recipe-tags" @bind-Value="draft.Tags" maxlength="400" />
+        </div>
+        <div class="form-field">
+            <label for="import-ingredients">Zutaten</label>
+            <InputTextArea id="import-ingredients"
+                           @bind-Value="draft.Ingredients"
+                           placeholder="200 | g | Mehl | Backen" />
+            <small>Eine Zutat pro Zeile: Menge | Einheit | Name | Abteilung</small>
+        </div>
+        <div class="form-field">
+            <label for="import-steps">Zubereitung</label>
+            <InputTextArea id="import-steps"
+                           @bind-Value="draft.Steps"
+                           placeholder="Ein Arbeitsschritt pro Zeile" />
+            <small>Ein Arbeitsschritt pro Zeile</small>
+        </div>
+
+        @if (draft.ImageData is not null && imagePreviewUrl is not null)
+        {
+            <div class="editor-image-preview">
+                <img src="@imagePreviewUrl" alt="Ausgewähltes Rezeptfoto" />
+                <div>
+                    <strong>Eigenes Foto</strong>
+                    <small>Wird mit dem Rezept gespeichert.</small>
+                </div>
+                <button class="icon-button" type="button" @onclick="RemoveImage" aria-label="Rezeptfoto entfernen">×</button>
+            </div>
+        }
+
+        <label class="image-upload">
+            <InputFile OnChange="HandleImage" accept="image/jpeg,image/png,image/webp" />
+            <span class="upload-symbol">@(draft.ImageData is null ? "＋" : "↻")</span>
+            <span>
+                <strong>@(draft.ImageData is null ? "Eigenes Foto hinzufügen" : "Foto ersetzen")</strong>
+                <small>Instagram-Bilder werden nicht automatisch kopiert · max. 4 MB</small>
+            </span>
+        </label>
+
+        @if (!string.IsNullOrWhiteSpace(formError))
+        {
+            <p class="form-error" role="alert">@formError</p>
+        }
+
+        <div class="editor-actions">
+            <button class="button button-ghost" type="button" @onclick="ResetImport">Zurück</button>
+            <button class="button button-primary" type="submit" disabled="@isSaving">
+                @(isSaving ? "Wird gespeichert …" : "Rezept speichern")
+            </button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private static readonly HashSet<string> AllowedImageTypes =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+        };
+
+    private string sourceUrl = string.Empty;
+    private string copiedCaption = string.Empty;
+    private RecipeDraft? draft;
+    private bool isImporting;
+    private bool isSaving;
+    private string? importError;
+    private string? formError;
+    private string? imagePreviewUrl;
+
+    private async Task CreateDraft()
+    {
+        isImporting = true;
+        importError = null;
+        try
+        {
+            var result = await InstagramImporter.ImportAsync(sourceUrl, copiedCaption);
+            if (!result.IsSuccess || result.Draft is null)
+            {
+                importError = result.Error;
+                return;
+            }
+
+            draft = result.Draft;
+        }
+        catch
+        {
+            importError = "Der Instagram-Post konnte gerade nicht gelesen werden. Kopiere die Bildunterschrift und versuche es erneut.";
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+
+    private async Task HandleImage(InputFileChangeEventArgs eventArgs)
+    {
+        if (draft is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var file = eventArgs.File;
+            if (!AllowedImageTypes.Contains(file.ContentType))
+            {
+                formError = "Bitte ein Bild im Format JPEG, PNG oder WebP auswählen.";
+                return;
+            }
+
+            await using var stream = file.OpenReadStream(4 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            draft.ImageData = memory.ToArray();
+            draft.ImageContentType = file.ContentType;
+            imagePreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(draft.ImageData)}";
+            formError = null;
+        }
+        catch (IOException)
+        {
+            formError = "Das Bild ist größer als 4 MB.";
+        }
+    }
+
+    private void RemoveImage()
+    {
+        if (draft is null)
+        {
+            return;
+        }
+
+        draft.ImageData = null;
+        draft.ImageContentType = null;
+        imagePreviewUrl = null;
+    }
+
+    private async Task SaveRecipe()
+    {
+        if (draft is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(draft.Name) ||
+            string.IsNullOrWhiteSpace(draft.Ingredients) ||
+            string.IsNullOrWhiteSpace(draft.Steps))
+        {
+            formError = "Bitte Name, Zutaten und Zubereitung ausfüllen.";
+            return;
+        }
+
+        isSaving = true;
+        var id = await Planner.AddRecipeAsync(draft);
+        isSaving = false;
+        Navigation.NavigateTo($"/recipes/{id}");
+    }
+
+    private void ResetImport()
+    {
+        draft = null;
+        formError = null;
+        importError = null;
+        imagePreviewUrl = null;
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/recipes");
+}

@@ -1,0 +1,409 @@
+@page "/settings"
+@attribute [Authorize]
+@inject MealPlannerService Planner
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Einstellungen · Mahlzeit</PageTitle>
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow">Mahlzeit</p>
+        <h1>Einstellungen</h1>
+    </div>
+    <div class="profile-button"><span>@Initials</span></div>
+</header>
+
+@if (isLoading)
+{
+    <div class="skeleton-list"></div>
+}
+else
+{
+    <button class="settings-profile" @onclick="() => OpenPanel(SettingsPanel.Household)">
+        <div class="settings-avatar">@Initials</div>
+        <div>
+            <h2>@settings.HouseholdName</h2>
+            <p>@settings.DefaultServings Personen · @settings.WeeknightMaxMinutes Minuten unter der Woche</p>
+        </div>
+        <span>→</span>
+    </button>
+
+    <section class="settings-section">
+        <p class="eyebrow">Planung</p>
+        <div class="settings-list">
+            <button @onclick="() => OpenPanel(SettingsPanel.Preferences)">
+                <span class="settings-icon">♨</span>
+                <span>
+                    <strong>Vorlieben</strong>
+                    <small>@PreferenceSummary</small>
+                </span>
+                <i>→</i>
+            </button>
+            <button @onclick="() => OpenPanel(SettingsPanel.Household)">
+                <span class="settings-icon">@settings.DefaultServings</span>
+                <span>
+                    <strong>Haushalt</strong>
+                    <small>@settings.HouseholdName · @settings.DefaultServings Standardportionen</small>
+                </span>
+                <i>→</i>
+            </button>
+            <button @onclick="() => OpenPanel(SettingsPanel.CookingTimes)">
+                <span class="settings-icon">◷</span>
+                <span>
+                    <strong>Kochzeiten & Wochenumfang</strong>
+                    <small>@settings.PlannedLunchesPerWeek Mittagessen · @settings.PlannedDinnersPerWeek Abendessen</small>
+                </span>
+                <i>→</i>
+            </button>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="eyebrow">App & Datenschutz</p>
+        <div class="settings-list">
+            <a href="/Account/Manage">
+                <span class="settings-icon">◎</span>
+                <span><strong>Konto</strong><small>@AccountName · Passwort und Passkey</small></span>
+                <i>→</i>
+            </a>
+            <button @onclick="() => OpenPanel(SettingsPanel.Install)">
+                <span class="settings-icon">⇩</span>
+                <span><strong>Auf dem Home-Bildschirm</strong><small>Wie eine App auf dem iPhone öffnen</small></span>
+                <i>→</i>
+            </button>
+            <button @onclick="() => OpenPanel(SettingsPanel.Storage)">
+                <span class="settings-icon">▣</span>
+                <span><strong>Datenspeicher</strong><small>Rezepte und Bilder auf deiner Synology</small></span>
+                <i>→</i>
+            </button>
+        </div>
+    </section>
+
+    <div class="system-card">
+        <span class="status-dot"></span>
+        <div>
+            <strong>Deine Daten bleiben bei dir</strong>
+            <p>Einstellungen, Rezepte und Bilder werden in deiner eigenen PostgreSQL-Datenbank gespeichert.</p>
+        </div>
+    </div>
+
+    <footer class="settings-footer">Mahlzeit · .NET 10 · Version 0.6</footer>
+}
+
+@if (activePanel is not SettingsPanel.None)
+{
+    <div class="sheet-backdrop" @onclick="ClosePanel">
+        <section class="bottom-sheet settings-edit-sheet"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-label="@PanelTitle"
+                 @onclick:stopPropagation>
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+                <div>
+                    <p class="eyebrow">Einstellungen</p>
+                    <h2>@PanelTitle</h2>
+                </div>
+                <button class="icon-button" type="button" @onclick="ClosePanel" aria-label="Schließen">×</button>
+            </div>
+
+            @if (activePanel is SettingsPanel.Install)
+            {
+                <div class="info-panel">
+                    <div class="info-hero">⇩</div>
+                    <h3>Mahlzeit auf dem iPhone installieren</h3>
+                    <ol>
+                        <li><span>1</span><p>Öffne die HTTPS-Adresse deiner Mahlzeit-App in Safari.</p></li>
+                        <li><span>2</span><p>Tippe unten auf <strong>Teilen</strong>.</p></li>
+                        <li><span>3</span><p>Wähle <strong>Zum Home-Bildschirm</strong> und anschließend „Als Web-App öffnen“.</p></li>
+                    </ol>
+                    <button class="button button-primary full-width" type="button" @onclick="ClosePanel">Verstanden</button>
+                </div>
+            }
+            else if (activePanel is SettingsPanel.Storage)
+            {
+                <div class="info-panel">
+                    <div class="info-hero">▣</div>
+                    <h3>Alles auf deiner Synology</h3>
+                    <p>Rezepte, Zutaten, Pläne, Einstellungen und komprimierte Rezeptbilder liegen gemeinsam in PostgreSQL. Der Datenbank-Port ist nicht nach außen freigegeben.</p>
+                    <div class="storage-facts">
+                        <div><strong>PostgreSQL</strong><span>Datenbank</span></div>
+                        <div><strong>bytea</strong><span>Bildspeicher</span></div>
+                        <div><strong>Täglich</strong><span>Backup empfohlen</span></div>
+                    </div>
+                    <button class="button button-primary full-width" type="button" @onclick="ClosePanel">Schließen</button>
+                </div>
+            }
+            else
+            {
+                <EditForm Model="settings" OnValidSubmit="SaveSettings" class="settings-form">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="form-error" />
+
+                    @if (activePanel is SettingsPanel.Household)
+                    {
+                        <div class="settings-form-intro">
+                            <span>⌂</span>
+                            <p>Name und Portionsgröße gelten für alle neu geplanten Gerichte.</p>
+                        </div>
+                        <div class="form-field">
+                            <label for="household-name">Name des Haushalts</label>
+                            <InputText id="household-name" @bind-Value="settings.HouseholdName" maxlength="120" />
+                        </div>
+                        <div class="setting-card">
+                            <div class="setting-card-heading">
+                                <div>
+                                    <strong>Standardportionen</strong>
+                                    <small>Wird beim Einplanen vorausgewählt</small>
+                                </div>
+                                <span class="range-value">@settings.DefaultServings</span>
+                            </div>
+                            <div class="stepper-control">
+                                <button type="button" @onclick="DecreaseServings" disabled="@(settings.DefaultServings <= 1)">−</button>
+                                <strong>@settings.DefaultServings @(settings.DefaultServings == 1 ? "Person" : "Personen")</strong>
+                                <button type="button" @onclick="IncreaseServings" disabled="@(settings.DefaultServings >= 12)">+</button>
+                            </div>
+                        </div>
+                    }
+                    else if (activePanel is SettingsPanel.Preferences)
+                    {
+                        <div class="settings-form-intro">
+                            <span>♨</span>
+                            <p>Diese Regeln werden bei automatischen Wochenvorschlägen berücksichtigt.</p>
+                        </div>
+                        <fieldset class="form-field">
+                            <legend>Ernährungsform</legend>
+                            <div class="choice-grid diet-choice">
+                                @foreach (var diet in DietOptions)
+                                {
+                                    <button type="button"
+                                            class="choice-chip @(settings.DietPreference == diet ? "selected" : null)"
+                                            @onclick="() => settings.DietPreference = diet">
+                                        @diet
+                                    </button>
+                                }
+                            </div>
+                        </fieldset>
+                        <fieldset class="form-field">
+                            <legend>Bevorzugte Gerichte</legend>
+                            <div class="choice-grid">
+                                @foreach (var tag in PreferenceTags)
+                                {
+                                    <button type="button"
+                                            class="choice-chip @(HasPreferredTag(tag) ? "selected" : null)"
+                                            @onclick="() => TogglePreferredTag(tag)">
+                                        @if (HasPreferredTag(tag))
+                                        {
+                                            <span aria-hidden="true">✓</span>
+                                        }
+                                        @tag
+                                    </button>
+                                }
+                            </div>
+                        </fieldset>
+                        <div class="form-field">
+                            <label for="allergies">Allergien und Unverträglichkeiten</label>
+                            <InputTextArea id="allergies"
+                                           @bind-Value="settings.Allergies"
+                                           placeholder="z. B. Erdnüsse, Laktose" />
+                            <small>Mit Komma getrennt. Passende Zutaten werden ausgeschlossen.</small>
+                        </div>
+                        <div class="form-field">
+                            <label for="excluded">Unerwünschte Zutaten</label>
+                            <InputTextArea id="excluded"
+                                           @bind-Value="settings.ExcludedIngredients"
+                                           placeholder="z. B. Koriander, Pilze" />
+                        </div>
+                    }
+                    else if (activePanel is SettingsPanel.CookingTimes)
+                    {
+                        <div class="settings-form-intro">
+                            <span>◷</span>
+                            <p>Vorschläge, die länger dauern, werden an diesen Tagen übersprungen.</p>
+                        </div>
+                        <div class="setting-card range-card">
+                            <div class="setting-card-heading">
+                                <div>
+                                    <strong>Montag bis Freitag</strong>
+                                    <small>Maximale Gesamtzeit</small>
+                                </div>
+                                <span class="range-value">@settings.WeeknightMaxMinutes Min.</span>
+                            </div>
+                            <input type="range" min="10" max="90" step="5" @bind="settings.WeeknightMaxMinutes" />
+                            <div class="range-labels"><span>10 Min.</span><span>90 Min.</span></div>
+                        </div>
+                        <div class="setting-card range-card">
+                            <div class="setting-card-heading">
+                                <div>
+                                    <strong>Samstag und Sonntag</strong>
+                                    <small>Maximale Gesamtzeit</small>
+                                </div>
+                                <span class="range-value">@settings.WeekendMaxMinutes Min.</span>
+                            </div>
+                            <input type="range" min="10" max="180" step="5" @bind="settings.WeekendMaxMinutes" />
+                            <div class="range-labels"><span>10 Min.</span><span>180 Min.</span></div>
+                        </div>
+                        <div class="setting-card range-card">
+                            <div class="setting-card-heading">
+                                <div>
+                                    <strong>Geplante Mittagessen</strong>
+                                    <small>Beim automatischen Füllen</small>
+                                </div>
+                                <span class="range-value">@settings.PlannedLunchesPerWeek von 7</span>
+                            </div>
+                            <input type="range" min="0" max="7" step="1" @bind="settings.PlannedLunchesPerWeek" />
+                            <div class="range-labels"><span>Keine</span><span>7 Mittagessen</span></div>
+                        </div>
+                        <div class="setting-card range-card">
+                            <div class="setting-card-heading">
+                                <div>
+                                    <strong>Geplante Abende</strong>
+                                    <small>Beim automatischen Füllen</small>
+                                </div>
+                                <span class="range-value">@settings.PlannedDinnersPerWeek von 7</span>
+                            </div>
+                            <input type="range" min="1" max="7" step="1" @bind="settings.PlannedDinnersPerWeek" />
+                            <div class="range-labels"><span>1 Abend</span><span>7 Abende</span></div>
+                        </div>
+                        <div class="setting-card range-card">
+                            <div class="setting-card-heading">
+                                <div>
+                                    <strong>Wiederholungen vermeiden</strong>
+                                    <small>Zuletzt gekochte Gerichte</small>
+                                </div>
+                                <span class="range-value">@(settings.AvoidRepeatsWithinDays == 0 ? "Aus" : $"{settings.AvoidRepeatsWithinDays} Tage")</span>
+                            </div>
+                            <input type="range" min="0" max="60" step="7" @bind="settings.AvoidRepeatsWithinDays" />
+                            <div class="range-labels"><span>Aus</span><span>60 Tage</span></div>
+                        </div>
+                    }
+
+                    <button class="button button-primary full-width settings-save" type="submit" disabled="@isSaving">
+                        @(isSaving ? "Wird gespeichert …" : "Änderungen speichern")
+                        <span aria-hidden="true">✓</span>
+                    </button>
+                </EditForm>
+            }
+        </section>
+    </div>
+}
+
+@if (showSaved)
+{
+    <div class="saved-toast" role="status"><span>✓</span> Einstellungen gespeichert</div>
+}
+
+@code {
+    private static readonly string[] DietOptions = ["Alles", "Vegetarisch", "Vegan"];
+    private static readonly string[] PreferenceTags = ["Schnell", "Meal Prep", "Familienliebling", "Proteinreich", "One Pot"];
+
+    private HouseholdSettings settings = new();
+    private SettingsPanel activePanel;
+    private bool isLoading = true;
+    private bool isSaving;
+    private bool showSaved;
+    private string AccountName = "Lokales Konto";
+    private string Initials = "M";
+
+    private string PreferenceSummary
+    {
+        get
+        {
+            var parts = new List<string> { settings.DietPreference };
+            var tags = SplitList(settings.PreferredTags).Take(2).ToList();
+            if (tags.Count > 0)
+            {
+                parts.Add(string.Join(", ", tags));
+            }
+            if (!string.IsNullOrWhiteSpace(settings.Allergies))
+            {
+                parts.Add("Allergien beachtet");
+            }
+            return string.Join(" · ", parts);
+        }
+    }
+
+    private string PanelTitle => activePanel switch
+    {
+        SettingsPanel.Preferences => "Vorlieben",
+        SettingsPanel.Household => "Haushalt",
+        SettingsPanel.CookingTimes => "Kochzeiten",
+        SettingsPanel.Install => "Home-Bildschirm",
+        SettingsPanel.Storage => "Datenspeicher",
+        _ => "Einstellungen"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await Planner.GetSettingsAsync();
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        AccountName = authState.User.Identity?.Name ?? "Lokales Konto";
+        Initials = BuildInitials(AccountName);
+        isLoading = false;
+    }
+
+    private void OpenPanel(SettingsPanel panel)
+    {
+        activePanel = panel;
+        showSaved = false;
+    }
+
+    private void ClosePanel() => activePanel = SettingsPanel.None;
+
+    private async Task SaveSettings()
+    {
+        isSaving = true;
+        settings = await Planner.SaveSettingsAsync(settings);
+        isSaving = false;
+        activePanel = SettingsPanel.None;
+        showSaved = true;
+        await Task.Delay(1800);
+        showSaved = false;
+    }
+
+    private void DecreaseServings() =>
+        settings.DefaultServings = Math.Max(1, settings.DefaultServings - 1);
+
+    private void IncreaseServings() =>
+        settings.DefaultServings = Math.Min(12, settings.DefaultServings + 1);
+
+    private bool HasPreferredTag(string tag) =>
+        SplitList(settings.PreferredTags).Contains(tag, StringComparer.OrdinalIgnoreCase);
+
+    private void TogglePreferredTag(string tag)
+    {
+        var tags = SplitList(settings.PreferredTags).ToList();
+        var existing = tags.FirstOrDefault(item => item.Equals(tag, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            tags.Add(tag);
+        }
+        else
+        {
+            tags.Remove(existing);
+        }
+
+        settings.PreferredTags = string.Join(", ", tags);
+    }
+
+    private static IEnumerable<string> SplitList(string? value) =>
+        (value ?? string.Empty)
+            .Split([',', ';', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string BuildInitials(string value)
+    {
+        var localPart = value.Split('@')[0];
+        var words = localPart.Split(['.', '-', '_', ' '], StringSplitOptions.RemoveEmptyEntries);
+        return string.Concat(words.Take(2).Select(word => char.ToUpperInvariant(word[0])));
+    }
+
+    private enum SettingsPanel
+    {
+        None,
+        Preferences,
+        Household,
+        CookingTimes,
+        Install,
+        Storage
+    }
+}

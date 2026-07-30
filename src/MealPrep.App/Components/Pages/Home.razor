@@ -1,0 +1,194 @@
+@page "/"
+@attribute [Authorize]
+@inject MealPlannerService Planner
+@inject NavigationManager Navigation
+
+<PageTitle>Heute · Mahlzeit</PageTitle>
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow">@Greeting</p>
+        <h1>Was gibt’s heute?</h1>
+    </div>
+    <a class="profile-button" href="/settings" aria-label="Einstellungen öffnen">
+        <span>MK</span>
+    </a>
+</header>
+
+@if (isLoading)
+{
+    <div class="skeleton-card" aria-label="Inhalte werden geladen"></div>
+}
+else
+{
+    <section class="today-meals" aria-label="Heutige Mahlzeiten">
+        @foreach (var mealType in MealTypes.All)
+        {
+            var meal = todayMeals.FirstOrDefault(entry => entry.MealType == mealType);
+            @if (meal is not null)
+            {
+                <article class="today-card today-meal-card" style="@($"--meal-accent:{meal.Recipe.AccentColor}")">
+                    <div class="today-image">
+                        @if (meal.Recipe.ImageData is not null)
+                        {
+                            <img src="@($"/api/recipes/{meal.RecipeId}/image")" alt="@meal.Recipe.Name" />
+                        }
+                        else
+                        {
+                            <span class="meal-emoji">@meal.Recipe.Emoji</span>
+                        }
+                        <div class="today-date">
+                            <span>@Today.ToString("ddd", GermanCulture)</span>
+                            <strong>@Today.Day</strong>
+                        </div>
+                    </div>
+                    <div class="today-card-body">
+                        <div class="card-kicker">
+                            <span>@TodayMealLabel(mealType)</span>
+                            <span>·</span>
+                            <span>@meal.Servings Personen</span>
+                        </div>
+                        <h2>@meal.Recipe.Name</h2>
+                        <div class="meal-meta">
+                            <span><strong>@meal.Recipe.TotalMinutes</strong> Min.</span>
+                            <span><strong>@meal.Recipe.Ingredients.Count</strong> Zutaten</span>
+                        </div>
+                        <div class="today-actions">
+                            <button class="button button-primary" @onclick="() => StartCooking(meal)">
+                                Kochmodus
+                                <span aria-hidden="true">→</span>
+                            </button>
+                            <button class="icon-button @(meal.IsCooked ? "is-complete" : null)"
+                                    @onclick="() => ToggleCooked(meal)"
+                                    aria-label="@(meal.IsCooked ? $"{mealType} als nicht gekocht markieren" : $"{mealType} als gekocht markieren")">
+                                ✓
+                            </button>
+                        </div>
+                    </div>
+                </article>
+            }
+            else
+            {
+                <article class="today-empty-slot">
+                    <span aria-hidden="true">@(mealType == MealTypes.Lunch ? "🥗" : "🍲")</span>
+                    <div>
+                        <p class="eyebrow">@TodayMealLabel(mealType)</p>
+                        <h2>@mealType planen</h2>
+                        <p>Noch nichts ausgewählt</p>
+                    </div>
+                    <a class="icon-button" href="/plan" aria-label="@($"{mealType} planen")">＋</a>
+                </article>
+            }
+        }
+    </section>
+
+    <section class="section-block">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Diese Woche</p>
+                <h2>@PlannedCount von 14 Mahlzeiten geplant</h2>
+            </div>
+            <a href="/plan">Plan öffnen</a>
+        </div>
+
+        <div class="week-glance">
+            @foreach (var day in WeekDays)
+            {
+                var dayMeals = weekPlan.Where(entry => entry.Date == day).ToList();
+                var lunch = dayMeals.FirstOrDefault(entry => entry.MealType == MealTypes.Lunch);
+                var dinner = dayMeals.FirstOrDefault(entry => entry.MealType == MealTypes.Dinner);
+                var dayIsDone = dayMeals.Count > 0 && dayMeals.All(entry => entry.IsCooked);
+                <button class="day-glance @(day == Today ? "is-today" : null) @(dayIsDone ? "is-done" : null)"
+                        @onclick="() => OpenDay(day)">
+                    <span>@day.ToString("ddd", GermanCulture).Substring(0, 1)</span>
+                    <strong>@day.Day</strong>
+                    <span class="day-meal-icons" aria-label="@DayMealLabel(lunch, dinner)">
+                        <i aria-hidden="true">@(lunch?.Recipe.Emoji ?? "·")</i>
+                        <i aria-hidden="true">@(dinner?.Recipe.Emoji ?? "·")</i>
+                    </span>
+                </button>
+            }
+        </div>
+    </section>
+
+    <section class="section-block">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Schnell entschieden</p>
+                <h2>Unter 30 Minuten</h2>
+            </div>
+            <a href="/recipes">Alle</a>
+        </div>
+        <div class="recipe-row">
+            @foreach (var recipe in quickRecipes)
+            {
+                <a class="mini-recipe-card" href="@($"/recipes/{recipe.Id}")">
+                    <div class="mini-recipe-art" style="@($"--meal-accent:{recipe.AccentColor}")">
+                        @if (recipe.ImageData is not null)
+                        {
+                            <img src="@($"/api/recipes/{recipe.Id}/image")" alt="" />
+                        }
+                        else
+                        {
+                            <span>@recipe.Emoji</span>
+                        }
+                    </div>
+                    <strong>@recipe.Name</strong>
+                    <small>@recipe.TotalMinutes Min. · @recipe.Tags.Split(',')[0]</small>
+                </a>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo GermanCulture =
+        System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+
+    private readonly DateOnly Today = DateOnly.FromDateTime(DateTime.Now);
+    private List<MealPlanEntry> todayMeals = [];
+    private List<MealPlanEntry> weekPlan = [];
+    private List<Recipe> quickRecipes = [];
+    private bool isLoading = true;
+
+    private string Greeting => DateTime.Now.Hour switch
+    {
+        < 11 => "Guten Morgen",
+        < 17 => "Guten Tag",
+        _ => "Guten Abend"
+    };
+
+    private DateOnly WeekStart => MealPlannerService.StartOfWeek(Today);
+    private IEnumerable<DateOnly> WeekDays => Enumerable.Range(0, 7).Select(WeekStart.AddDays);
+    private int PlannedCount => weekPlan.Count;
+
+    protected override async Task OnInitializedAsync()
+    {
+        weekPlan = await Planner.GetWeekPlanAsync(WeekStart);
+        todayMeals = weekPlan.Where(entry => entry.Date == Today).ToList();
+        quickRecipes = (await Planner.GetRecipesAsync())
+            .Where(recipe => recipe.TotalMinutes <= 30)
+            .Take(4)
+            .ToList();
+        isLoading = false;
+    }
+
+    private void StartCooking(MealPlanEntry meal) =>
+        Navigation.NavigateTo($"/cook/{meal.RecipeId}?mealType={Uri.EscapeDataString(meal.MealType)}");
+
+    private async Task ToggleCooked(MealPlanEntry meal)
+    {
+        await Planner.ToggleCookedAsync(meal.Id);
+        weekPlan = await Planner.GetWeekPlanAsync(WeekStart);
+        todayMeals = weekPlan.Where(entry => entry.Date == Today).ToList();
+    }
+
+    private static string TodayMealLabel(string mealType) =>
+        mealType == MealTypes.Lunch ? "Heute Mittag" : "Heute Abend";
+
+    private static string DayMealLabel(MealPlanEntry? lunch, MealPlanEntry? dinner) =>
+        $"Mittagessen: {lunch?.Recipe.Name ?? "nicht geplant"}; Abendessen: {dinner?.Recipe.Name ?? "nicht geplant"}";
+
+    private void OpenDay(DateOnly date) =>
+        Navigation.NavigateTo($"/plan?date={date:yyyy-MM-dd}");
+}

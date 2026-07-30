@@ -1,0 +1,105 @@
+@page "/shopping"
+@attribute [Authorize]
+@inject MealPlannerService Planner
+
+<PageTitle>Einkaufsliste · Mahlzeit</PageTitle>
+
+<header class="page-header">
+    <div>
+        <p class="eyebrow">Automatisch gesammelt</p>
+        <h1>Einkaufsliste</h1>
+    </div>
+    <button class="round-button" @onclick="Refresh" aria-label="Einkaufsliste aktualisieren">↻</button>
+</header>
+
+<div class="shopping-week">
+    <div>
+        <strong>@weekStart.ToString("dd. MMM", GermanCulture) – @weekStart.AddDays(6).ToString("dd. MMM", GermanCulture)</strong>
+        <span>@CompletedCount von @items.Count erledigt</span>
+    </div>
+    <div class="shopping-progress"><i style="@($"width:{ProgressPercent}%")"></i></div>
+</div>
+
+@if (isLoading)
+{
+    <div class="skeleton-list"></div>
+}
+else if (items.Count == 0)
+{
+    <section class="empty-today compact-empty">
+        <span class="empty-illustration">🧺</span>
+        <h2>Die Liste ist noch leer</h2>
+        <p>Plane zuerst ein paar Gerichte für diese Woche.</p>
+        <a class="button button-primary" href="/plan">Woche planen</a>
+    </section>
+}
+else
+{
+    <div class="shopping-summary">
+        <span>🧺</span>
+        <p><strong>Alles für deine Woche</strong><br />Sortiert wie im Supermarkt.</p>
+    </div>
+
+    <section class="shopping-groups">
+        @foreach (var group in items.GroupBy(item => item.Aisle))
+        {
+            <div class="shopping-group">
+                <div class="shopping-group-title">
+                    <h2>@group.Key</h2>
+                    <span>@group.Count()</span>
+                </div>
+                <div class="shopping-items">
+                    @foreach (var item in group)
+                    {
+                        <button class="shopping-item @(item.IsChecked ? "checked" : null)"
+                                @onclick="() => ToggleItem(item)">
+                            <span class="shopping-checkbox">@(item.IsChecked ? "✓" : "")</span>
+                            <span class="shopping-item-copy">
+                                <strong>@item.Name</strong>
+                                <small>Für @item.UsedBy</small>
+                            </span>
+                            <span class="shopping-quantity">
+                                @MealPlannerService.FormatQuantity(item.Quantity) @item.Unit
+                            </span>
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo GermanCulture =
+        System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+
+    private readonly DateOnly weekStart =
+        MealPlannerService.StartOfWeek(DateOnly.FromDateTime(DateTime.Now));
+    private List<ShoppingListItem> items = [];
+    private bool isLoading = true;
+
+    private int CompletedCount => items.Count(item => item.IsChecked);
+    private int ProgressPercent => items.Count == 0
+        ? 0
+        : (int)Math.Round(CompletedCount / (double)items.Count * 100);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadItems();
+    }
+
+    private async Task LoadItems()
+    {
+        isLoading = true;
+        items = await Planner.GetShoppingListAsync(weekStart);
+        isLoading = false;
+    }
+
+    private async Task ToggleItem(ShoppingListItem item)
+    {
+        await Planner.ToggleShoppingItemAsync(weekStart, item.Key);
+        await LoadItems();
+    }
+
+    private async Task Refresh() => await LoadItems();
+}
