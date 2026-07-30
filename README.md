@@ -78,6 +78,32 @@ Git-Tags wie `v1.2.3` ergeben das Image `mealprep-app:1.2.3`. Bei noch nicht
 getaggten Commits wird die Build-Metadaten-Version in einen Docker-kompatiblen
 Tag umgewandelt, beispielsweise `0.1.0+12` zu `0.1.0-build.12`.
 
+## Docker-Image auf GitHub veröffentlichen
+
+Nach der Anmeldung bei der GitHub Container Registry kann der Cake-Task das
+versionierte Image unter `ghcr.io/<github-owner>/mealprep-app:<version>`
+veröffentlichen:
+
+```sh
+docker login ghcr.io
+dotnet build.cs -- --target Docker-Push --github-owner <github-owner>
+```
+
+In GitHub Actions wird der Besitzer automatisch aus
+`GITHUB_REPOSITORY_OWNER` gelesen. Mit `--github-image-name` lässt sich der
+Paketname ändern. `--push-latest` veröffentlicht zusätzlich den Tag `latest`:
+
+```sh
+dotnet build.cs -- --target Docker-Push \
+  --github-owner <github-owner> \
+  --github-image-name mealprep \
+  --push-latest
+```
+
+Der Task führt keine eigene Anmeldung durch und gibt daher keine Zugangsdaten
+an Cake weiter. Lokal muss Docker bereits bei `ghcr.io` angemeldet sein; in
+GitHub Actions sollte dafür der bereitgestellte `GITHUB_TOKEN` verwendet werden.
+
 ## Sicherung
 
 `scripts/backup.sh` erzeugt einen komprimierten, konsistenten PostgreSQL-Dump. Der Ausgabeordner sollte zusätzlich mit Synology Hyper Backup gesichert werden.

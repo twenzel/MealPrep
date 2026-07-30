@@ -10,6 +10,11 @@ var target = Argument("target", "Default");
 var imageName = Argument("image-name", "mealprep-app");
 var outputDirectoryArgument = Argument("output-directory", "artifacts/docker");
 var platform = Argument("platform", string.Empty);
+var githubOwner = Argument(
+    "github-owner",
+    EnvironmentVariable("GITHUB_REPOSITORY_OWNER") ?? string.Empty);
+var githubImageName = Argument("github-image-name", imageName);
+var pushLatest = Argument("push-latest", false);
 
 //////////////////////////////////////////////////////////////////////
 // BUILD VARIABLES
@@ -66,6 +71,35 @@ string ToArchiveName(string value)
 {
     var normalized = Regex.Replace(value, @"[^A-Za-z0-9_.-]+", "-").Trim('.', '-');
     return string.IsNullOrWhiteSpace(normalized) ? "image" : normalized;
+}
+
+string ToGitHubImagePath(string owner, string name)
+{
+    var normalizedOwner = owner.Trim().Trim('/').ToLowerInvariant();
+    var normalizedName = name.Trim().Trim('/').ToLowerInvariant();
+
+    if (string.IsNullOrWhiteSpace(normalizedOwner))
+    {
+        throw new Exception(
+            "Für Docker-Push muss --github-owner angegeben oder " +
+            "GITHUB_REPOSITORY_OWNER gesetzt sein.");
+    }
+
+    if (string.IsNullOrWhiteSpace(normalizedName))
+    {
+        throw new Exception("--github-image-name darf nicht leer sein.");
+    }
+
+    if (normalizedOwner.Contains('/') ||
+        normalizedOwner.Contains('\\') ||
+        normalizedName.Contains('\\') ||
+        normalizedName.Any(char.IsWhiteSpace))
+    {
+        throw new Exception(
+            $"Ungültiger GitHub-Containerpfad: '{owner}/{name}'.");
+    }
+
+    return $"ghcr.io/{normalizedOwner}/{normalizedName}";
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -175,6 +209,51 @@ Task("Docker-Export")
         "Docker-Archiv erstellt: {0} ({1:F1} MiB)",
         archivePath,
         archive.Length / 1024d / 1024d);
+});
+
+Task("Docker-Push")
+    .Description("Pushes the versioned Docker image to GitHub Container Registry")
+    .IsDependentOn("Docker-Build")
+    .Does(() =>
+{
+    var githubImagePath = ToGitHubImagePath(githubOwner, githubImageName);
+    var versionedReference = $"{githubImagePath}:{imageTag}";
+
+    RunCommand(
+        "docker",
+        new ProcessArgumentBuilder()
+            .Append("tag")
+            .AppendQuoted(imageReference)
+            .AppendQuoted(versionedReference),
+        repositoryRoot);
+    RunCommand(
+        "docker",
+        new ProcessArgumentBuilder()
+            .Append("push")
+            .AppendQuoted(versionedReference),
+        repositoryRoot);
+
+    Information("GitHub-Image veröffentlicht: {0}", versionedReference);
+
+    if (pushLatest)
+    {
+        var latestReference = $"{githubImagePath}:latest";
+        RunCommand(
+            "docker",
+            new ProcessArgumentBuilder()
+                .Append("tag")
+                .AppendQuoted(imageReference)
+                .AppendQuoted(latestReference),
+            repositoryRoot);
+        RunCommand(
+            "docker",
+            new ProcessArgumentBuilder()
+                .Append("push")
+                .AppendQuoted(latestReference),
+            repositoryRoot);
+
+        Information("GitHub-Image veröffentlicht: {0}", latestReference);
+    }
 });
 
 Task("Default")
