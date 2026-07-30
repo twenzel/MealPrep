@@ -27,7 +27,7 @@ Beim Instagram-Import entsteht immer zuerst ein bearbeitbarer Entwurf. Falls Ins
 
 1. In `.env` ein langes, zufälliges Datenbankpasswort setzen.
 2. `docker compose up -d` ausführen.
-3. `http://localhost:8088` öffnen und den ersten Zugang registrieren.
+3. `http://localhost:8088` öffnen und den ersten Zugang registrieren ("Ersten Haushalt anlegen").
 
 Die Datenbankmigrationen und die Beispieldaten werden beim ersten Start automatisch angelegt.
 
