@@ -32,14 +32,14 @@ jobs:
             10.0.x
 
       - name: Run Cake build
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'release'
         run: dotnet run build.cs -- --verbosity=Verbose --target=Default
         env:
           sonarLogin: ${{ secrets.SONARLOGIN }}
           nugetApiKey: ${{ secrets.NUGETAPIKEY }}
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'release'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -47,7 +47,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'release'
         run: >
           dotnet run build.cs --
           --verbosity=Verbose
