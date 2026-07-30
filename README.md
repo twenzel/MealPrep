@@ -21,6 +21,8 @@ Automatische Vorschläge berücksichtigen Ernährungsform, Allergien, ausgeschlo
 
 Beim Instagram-Import entsteht immer zuerst ein bearbeitbarer Entwurf. Falls Instagram die öffentliche Bildunterschrift nicht ausliefert, kann der Text direkt aus der Instagram-App kopiert und eingefügt werden. Ein Instagram-Login oder Zugriffstoken ist nicht erforderlich; Bilder werden nur gespeichert, wenn sie selbst hochgeladen werden.
 
+![Screenshot](./preview.png "preview")
+
 ## Lokal mit Docker starten
 
 1. `.env.example` nach `.env` kopieren.
