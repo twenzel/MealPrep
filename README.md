@@ -80,13 +80,25 @@ Tag umgewandelt, beispielsweise `0.1.0+12` zu `0.1.0-build.12`.
 
 ## Docker-Image auf GitHub veröffentlichen
 
-Nach der Anmeldung bei der GitHub Container Registry kann der Cake-Task das
-versionierte Image unter `ghcr.io/<github-owner>/mealprep-app:<version>`
-veröffentlichen:
+Das aktuelle Docker-Image liegt in der GitHub Container Registry unter
+**`ghcr.io/twenzel/mealprep`**. Der neueste Stand kann direkt geladen werden:
+
+```sh
+docker pull ghcr.io/twenzel/mealprep:latest
+```
+
+Alternativ lässt sich mit
+`docker pull ghcr.io/twenzel/mealprep:<version>` gezielt eine bestimmte
+GitVersion laden.
+
+Nach der Anmeldung bei der GitHub Container Registry veröffentlicht der
+Cake-Task ein neues versioniertes Image:
 
 ```sh
 docker login ghcr.io
-dotnet build.cs -- --target Docker-Push --github-owner <github-owner>
+dotnet build.cs -- --target Docker-Push \
+  --github-owner twenzel \
+  --github-image-name mealprep
 ```
 
 In GitHub Actions wird der Besitzer automatisch aus
@@ -95,7 +107,7 @@ Paketname ändern. `--push-latest` veröffentlicht zusätzlich den Tag `latest`:
 
 ```sh
 dotnet build.cs -- --target Docker-Push \
-  --github-owner <github-owner> \
+  --github-owner twenzel \
   --github-image-name mealprep \
   --push-latest
 ```
