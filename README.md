@@ -13,7 +13,7 @@ Eine für das iPhone optimierte, selbst gehostete Essensplanung unter .NET 10.
 - Rezeptbilder als Binärdaten direkt in PostgreSQL
 - Automatisch aggregierte und dauerhaft abhakbare Einkaufsliste
 - Schrittweiser Kochmodus mit optionaler Bildschirm-Wachhaltung
-- Anmeldung mit ASP.NET Core Identity und Passkey-Unterstützung
+- Anmeldung mit ASP.NET Core Identity, optional per Passkey oder festem Serverzugang
 - Installierbare PWA für den iPhone-Home-Bildschirm
 - Docker-Compose-Konfiguration für Synology Container Manager
 
@@ -25,18 +25,68 @@ Beim Instagram-Import entsteht immer zuerst ein bearbeitbarer Entwurf. Falls Ins
 
 ## Lokal mit Docker starten
 
-1. In `.env` ein langes, zufälliges Datenbankpasswort setzen.
+1. `.env.example` als `.env` kopieren und ein langes, zufälliges Datenbankpasswort setzen.
+   Optional `MEALPREP_USERNAME` und `MEALPREP_PASSWORD` für einen festen Zugang setzen.
 2. `docker compose up -d` ausführen.
-3. `http://localhost:8088` öffnen und den ersten Zugang registrieren ("Ersten Haushalt anlegen").
+3. `http://localhost:8088` öffnen. Mit festem Zugang direkt anmelden, andernfalls
+   den ersten Zugang registrieren („Ersten Haushalt anlegen“).
 
 Die Datenbankmigrationen und die Beispieldaten werden beim ersten Start automatisch angelegt.
+
+## Fester Benutzername und festes Passwort
+
+Für eine private Installation kann genau ein Zugang über die Serverkonfiguration
+vorgegeben werden. Sobald Benutzername und Passwort gemeinsam gesetzt sind,
+werden Registrierung, Passkeys, externe Anmeldungen, Passwort-Reset und die
+Kontoverwaltung deaktiviert. Nur der exakt konfigurierte Benutzername und das
+konfigurierte Passwort werden akzeptiert.
+
+In `appsettings.json`:
+
+```json
+{
+  "Authentication": {
+    "FixedCredentials": {
+      "Username": "mealprep",
+      "Password": "MealPrep-2026-sicher!"
+    }
+  }
+}
+```
+
+Mit Docker Compose werden die Werte sicherer über die nicht eingecheckte
+`.env`-Datei gesetzt:
+
+```dotenv
+MEALPREP_USERNAME=mealprep
+MEALPREP_PASSWORD=MealPrep-2026-sicher!
+```
+
+Bei einem direkten `docker run` werden die ASP.NET-Core-Umgebungsvariablen
+zusätzlich zu Port und Datenbankverbindung als Container-Argumente gesetzt:
+
+```sh
+docker run \
+  -e Authentication__FixedCredentials__Username='mealprep' \
+  -e Authentication__FixedCredentials__Password='MealPrep-2026-sicher!' \
+  ghcr.io/twenzel/mealprep:latest
+```
+
+Beide Werte müssen entweder gesetzt oder leer sein. Eine unvollständige
+Konfiguration wird beim Start abgelehnt. Das Konto wird beim Anwendungsstart
+automatisch angelegt und das Passwort bei Konfigurationsänderungen
+synchronisiert. Das Passwort muss die ASP.NET-Core-Identity-Passwortrichtlinie
+erfüllen. Zugangsdaten sollten nicht als Docker-Build-Argumente verwendet
+werden, da sie dadurch im Image landen können.
 
 ## Installation auf einer Synology
 
 Voraussetzung ist ein Modell, das Synology Container Manager unterstützt.
 
 1. Diesen Projektordner in einen gemeinsamen Ordner auf der NAS kopieren.
-2. Eine `.env` mit einem sicheren `POSTGRES_PASSWORD` anlegen.
+2. `.env.example` als `.env` kopieren und mindestens ein sicheres
+   `POSTGRES_PASSWORD` setzen. Für den festen Zugang zusätzlich
+   `MEALPREP_USERNAME` und `MEALPREP_PASSWORD` setzen.
 3. In Container Manager ein neues Projekt aus `compose.yaml` erstellen.
 4. Nach dem Start intern Port `8088` aufrufen.
 5. Im DSM-Reverse-Proxy eine HTTPS-Adresse auf `http://127.0.0.1:8088` weiterleiten.

@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject MealPlannerService Planner
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject FixedCredentialsOptions FixedCredentials
 
 <PageTitle>Einstellungen · Mahlzeit</PageTitle>
 
@@ -61,11 +62,22 @@ else
     <section class="settings-section">
         <p class="eyebrow">App & Datenschutz</p>
         <div class="settings-list">
-            <a href="/Account/Manage">
-                <span class="settings-icon">◎</span>
-                <span><strong>Konto</strong><small>@AccountName · Passwort und Passkey</small></span>
-                <i>→</i>
-            </a>
+            @if (FixedCredentials.IsEnabled)
+            {
+                <button type="button" disabled>
+                    <span class="settings-icon">◎</span>
+                    <span><strong>Konto</strong><small>@AccountName · Serverkonfigurierter Zugang</small></span>
+                    <i>✓</i>
+                </button>
+            }
+            else
+            {
+                <a href="/Account/Manage">
+                    <span class="settings-icon">◎</span>
+                    <span><strong>Konto</strong><small>@AccountName · Passwort und Passkey</small></span>
+                    <i>→</i>
+                </a>
+            }
             <button @onclick="() => OpenPanel(SettingsPanel.Install)">
                 <span class="settings-icon">⇩</span>
                 <span><strong>Auf dem Home-Bildschirm</strong><small>Wie eine App auf dem iPhone öffnen</small></span>
