@@ -1,4 +1,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+ARG VERSION=0.0.0-local
+ARG ASSEMBLY_VERSION=0.0.0.0
+ARG FILE_VERSION=0.0.0.0
+ARG INFORMATIONAL_VERSION=0.0.0-local
 WORKDIR /source
 
 COPY src/MealPrep.App/MealPrep.App.csproj src/MealPrep.App/
@@ -14,7 +18,12 @@ RUN dotnet publish src/MealPrep.App/MealPrep.App.csproj \
     --no-restore \
     --disable-build-servers \
     /p:UseAppHost=false \
-    /p:StaticWebAssetsEnabled=true
+    /p:StaticWebAssetsEnabled=true \
+    /p:ContinuousIntegrationBuild=true \
+    /p:Version="$VERSION" \
+    /p:AssemblyVersion="$ASSEMBLY_VERSION" \
+    /p:FileVersion="$FILE_VERSION" \
+    /p:InformationalVersion="$INFORMATIONAL_VERSION"
 
 # Die interaktive Oberfläche benötigt diesen Client. Ein unvollständiges
 # Publish-Image soll deshalb bereits beim Build fehlschlagen.

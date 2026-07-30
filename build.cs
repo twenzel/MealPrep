@@ -99,6 +99,8 @@ Task("Version")
     Information("MajorMinorPatch: {0}", versionInfo.MajorMinorPatch);
     Information("SemVer:         {0}", versionInfo.SemVer);
     Information("FullSemVer:     {0}", versionInfo.FullSemVer);
+    Information("AssemblySemVer: {0}", versionInfo.AssemblySemVer);
+    Information("AssemblyFile:   {0}", versionInfo.AssemblySemFileVer);
     Information("Branch:         {0}", versionInfo.BranchName);
     Information("SHA:            {0}", versionInfo.Sha);
     Information("Docker image:   {0}", imageReference);
@@ -121,6 +123,14 @@ Task("Docker-Build")
         .AppendQuoted(dockerfile.FullPath)
         .Append("--tag")
         .AppendQuoted(imageReference)
+        .Append("--build-arg")
+        .AppendQuoted($"VERSION={versionInfo.SemVer}")
+        .Append("--build-arg")
+        .AppendQuoted($"ASSEMBLY_VERSION={versionInfo.AssemblySemVer}")
+        .Append("--build-arg")
+        .AppendQuoted($"FILE_VERSION={versionInfo.AssemblySemFileVer}")
+        .Append("--build-arg")
+        .AppendQuoted($"INFORMATIONAL_VERSION={versionInfo.InformationalVersion}")
         .Append("--label")
         .AppendQuoted($"org.opencontainers.image.version={versionInfo.FullSemVer}")
         .Append("--label")

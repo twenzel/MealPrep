@@ -51,6 +51,8 @@ Der Cake-Build ermittelt die aktuelle Version mit GitVersion, baut
 Der Build verwendet das dateibasierte Cake.Sdk für .NET 10. Die Cake-Version ist
 direkt in `build.cs` festgeschrieben. GitVersion wird durch Cake über
 `InstallTools(...)` bereitgestellt.
+Die ermittelte Version wird außerdem an `dotnet publish` übergeben und auf der
+Einstellungsseite aus den Assembly-Metadaten angezeigt.
 
 ```sh
 dotnet build.cs

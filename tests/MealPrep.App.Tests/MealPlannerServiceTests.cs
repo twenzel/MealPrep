@@ -286,4 +286,19 @@ public sealed class MealPlannerServiceTests
 
         Assert.Null(selected);
     }
+
+    [Theory]
+    [InlineData("1.2.3", "1.2.3")]
+    [InlineData("1.2.3-beta.4+Branch.main.Sha.abc123", "1.2.3-beta.4")]
+    [InlineData(null, "9.8.7")]
+    public void ApplicationVersion_UsesInformationalVersionWithoutBuildMetadata(
+        string? informationalVersion,
+        string expected)
+    {
+        var result = ApplicationVersion.ToDisplayVersion(
+            informationalVersion,
+            new Version(9, 8, 7, 6));
+
+        Assert.Equal(expected, result);
+    }
 }
