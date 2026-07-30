@@ -372,6 +372,51 @@ public sealed class MealPlannerService(IDbContextFactory<ApplicationDbContext> d
             : quantity.ToString("0.##", GermanCulture);
     }
 
+    public static Recipe? PickSurpriseRecipe(
+        IEnumerable<Recipe> recipes,
+        HouseholdSettings settings,
+        DateOnly date,
+        IReadOnlySet<int> usedRecipeIds,
+        Random? random = null)
+    {
+        var allowedRecipes = recipes
+            .Where(recipe => IsRecipeAllowed(recipe, settings, date))
+            .ToList();
+        if (allowedRecipes.Count == 0)
+        {
+            return null;
+        }
+
+        var unusedRecipes = allowedRecipes
+            .Where(recipe => !usedRecipeIds.Contains(recipe.Id))
+            .ToList();
+        var candidates = unusedRecipes.Count > 0 ? unusedRecipes : allowedRecipes;
+
+        var weightedCandidates = candidates
+            .Select(recipe => new
+            {
+                Recipe = recipe,
+                Weight = 1 +
+                         (recipe.IsFavorite ? 3 : 0) +
+                         Math.Min(PreferenceScore(recipe, settings), 4) * 2
+            })
+            .ToList();
+        var totalWeight = weightedCandidates.Sum(candidate => candidate.Weight);
+        var ticket = (random ?? Random.Shared).Next(totalWeight);
+
+        foreach (var candidate in weightedCandidates)
+        {
+            if (ticket < candidate.Weight)
+            {
+                return candidate.Recipe;
+            }
+
+            ticket -= candidate.Weight;
+        }
+
+        return weightedCandidates[^1].Recipe;
+    }
+
     public static bool IsRecipeAllowed(Recipe recipe, HouseholdSettings settings, DateOnly date)
     {
         var maxMinutes = date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday

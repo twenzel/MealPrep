@@ -9,7 +9,10 @@
         <p class="eyebrow">Wochenplan</p>
         <h1>@WeekLabel</h1>
     </div>
-    <button class="round-button" @onclick="SuggestWeek" aria-label="Woche automatisch füllen">✦</button>
+    <button class="round-button"
+            @onclick="SurpriseFreeMeals"
+            disabled="@isSuggesting"
+            aria-label="Freie Mahlzeiten überraschend füllen">✦</button>
 </header>
 
 <div class="week-switcher">
@@ -79,10 +82,16 @@ else
         }
     </section>
 
-    <button class="button button-secondary plan-suggest" @onclick="SuggestWeek">
+    <button class="button button-secondary plan-suggest"
+            @onclick="SurpriseFreeMeals"
+            disabled="@(isSuggesting || recipes.Count == 0)">
         <span aria-hidden="true">✦</span>
-        Freie Tage automatisch füllen
+        @(isSuggesting ? "Überraschung wird geplant …" : "Überrasch mich")
     </button>
+    @if (!string.IsNullOrWhiteSpace(suggestionMessage))
+    {
+        <p class="plan-suggest-status" role="status">@suggestionMessage</p>
+    }
 }
 
 @if (pickerDate is not null)
@@ -147,6 +156,8 @@ else
     private List<Recipe> recipes = [];
     private HouseholdSettings settings = new();
     private bool isLoading = true;
+    private bool isSuggesting;
+    private string? suggestionMessage;
 
     private IEnumerable<DateOnly> WeekDays => Enumerable.Range(0, 7).Select(weekStart.AddDays);
     private string WeekLabel =>
@@ -184,12 +195,14 @@ else
 
         await Planner.AssignRecipeAsync(pickerDate.Value, pickerMealType, recipeId);
         pickerDate = null;
+        suggestionMessage = null;
         await LoadPlan();
     }
 
     private async Task RemoveMeal(DateOnly date, string mealType)
     {
         await Planner.RemoveMealAsync(date, mealType);
+        suggestionMessage = null;
         await LoadPlan();
     }
 
@@ -208,64 +221,94 @@ else
             .ToList();
     }
 
-    private async Task SuggestWeek()
+    private async Task SurpriseFreeMeals()
     {
-        if (recipes.Count == 0)
+        if (isSuggesting)
         {
             return;
         }
 
-        var usedIds = plan.Select(entry => entry.RecipeId).ToHashSet();
-        var index = 0;
-        foreach (var mealType in MealTypes.All)
+        if (recipes.Count == 0)
         {
-            var plannedDays = mealType == MealTypes.Lunch
-                ? settings.PlannedLunchesPerWeek
-                : settings.PlannedDinnersPerWeek;
-            foreach (var date in WeekDays.Take(plannedDays))
-            {
-                if (plan.Any(entry => entry.Date == date && entry.MealType == mealType))
-                {
-                    continue;
-                }
-
-                var candidates = recipes
-                    .Where(recipe => MealPlannerService.IsRecipeAllowed(recipe, settings, date))
-                    .OrderBy(recipe => usedIds.Contains(recipe.Id))
-                    .ThenByDescending(recipe => recipe.IsFavorite)
-                    .ThenByDescending(recipe => MealPlannerService.PreferenceScore(recipe, settings))
-                    .ThenBy(recipe => recipe.LastCookedAtUtc)
-                    .ToList();
-                if (candidates.Count == 0)
-                {
-                    continue;
-                }
-
-                var selectedRecipe = candidates[index % candidates.Count];
-                await Planner.AssignRecipeAsync(date, mealType, selectedRecipe.Id);
-                usedIds.Add(selectedRecipe.Id);
-                index++;
-            }
+            suggestionMessage = "Lege zuerst mindestens ein Rezept an.";
+            return;
         }
 
-        await LoadPlan();
+        isSuggesting = true;
+        suggestionMessage = null;
+        StateHasChanged();
+
+        var addedMeals = 0;
+        try
+        {
+            var usedIds = plan.Select(entry => entry.RecipeId).ToHashSet();
+            foreach (var mealType in MealTypes.All)
+            {
+                var targetCount = mealType == MealTypes.Lunch
+                    ? settings.PlannedLunchesPerWeek
+                    : settings.PlannedDinnersPerWeek;
+                var existingCount = plan.Count(entry => entry.MealType == mealType);
+                var missingCount = Math.Max(0, targetCount - existingCount);
+                var freeDates = WeekDays
+                    .Where(date => CanSuggestForDate(date))
+                    .Where(date => plan.All(entry =>
+                        entry.Date != date || entry.MealType != mealType))
+                    .Take(missingCount)
+                    .ToList();
+
+                foreach (var date in freeDates)
+                {
+                    var selectedRecipe = MealPlannerService.PickSurpriseRecipe(
+                        recipes,
+                        settings,
+                        date,
+                        usedIds);
+                    if (selectedRecipe is null)
+                    {
+                        continue;
+                    }
+
+                    await Planner.AssignRecipeAsync(date, mealType, selectedRecipe.Id);
+                    usedIds.Add(selectedRecipe.Id);
+                    addedMeals++;
+                }
+            }
+
+            await LoadPlan();
+            suggestionMessage = addedMeals switch
+            {
+                0 => "Es gibt aktuell keine freien, passenden Mahlzeiten.",
+                1 => "Eine freie Mahlzeit wurde überraschend gefüllt.",
+                _ => $"{addedMeals} freie Mahlzeiten wurden überraschend gefüllt."
+            };
+        }
+        finally
+        {
+            isSuggesting = false;
+        }
     }
 
     private async Task PreviousWeek()
     {
         weekStart = weekStart.AddDays(-7);
+        suggestionMessage = null;
         await LoadPlan();
     }
 
     private async Task NextWeek()
     {
         weekStart = weekStart.AddDays(7);
+        suggestionMessage = null;
         await LoadPlan();
     }
 
     private async Task CurrentWeek()
     {
         weekStart = MealPlannerService.StartOfWeek(Today);
+        suggestionMessage = null;
         await LoadPlan();
     }
+
+    private bool CanSuggestForDate(DateOnly date) =>
+        weekStart != MealPlannerService.StartOfWeek(Today) || date >= Today;
 }

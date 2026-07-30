@@ -214,4 +214,76 @@ public sealed class MealPlannerServiceTests
 
         Assert.Equal(2, MealPlannerService.PreferenceScore(recipe, settings));
     }
+
+    [Fact]
+    public void PickSurpriseRecipe_UsesAnUnusedAllowedRecipe()
+    {
+        var usedRecipe = new Recipe
+        {
+            Id = 1,
+            Name = "Schon geplant",
+            Tags = "schnell",
+            PrepMinutes = 10,
+            CookMinutes = 10
+        };
+        var unusedRecipe = new Recipe
+        {
+            Id = 2,
+            Name = "Neue Überraschung",
+            Tags = "schnell",
+            PrepMinutes = 10,
+            CookMinutes = 10
+        };
+        var tooSlowRecipe = new Recipe
+        {
+            Id = 3,
+            Name = "Zu aufwendig",
+            Tags = "schnell",
+            PrepMinutes = 60,
+            CookMinutes = 60
+        };
+        var settings = new HouseholdSettings
+        {
+            WeeknightMaxMinutes = 30,
+            WeekendMaxMinutes = 30
+        };
+
+        var selected = MealPlannerService.PickSurpriseRecipe(
+            [usedRecipe, unusedRecipe, tooSlowRecipe],
+            settings,
+            new DateOnly(2026, 7, 30),
+            new HashSet<int> { usedRecipe.Id },
+            new Random(42));
+
+        Assert.Same(unusedRecipe, selected);
+    }
+
+    [Fact]
+    public void PickSurpriseRecipe_ReturnsNullWhenNothingMatches()
+    {
+        var recipe = new Recipe
+        {
+            Id = 1,
+            Name = "Fischgericht",
+            Tags = "proteinreich",
+            PrepMinutes = 10,
+            CookMinutes = 10,
+            Ingredients = [new RecipeIngredient { Name = "Lachs" }]
+        };
+        var settings = new HouseholdSettings
+        {
+            Allergies = "Lachs",
+            WeeknightMaxMinutes = 30,
+            WeekendMaxMinutes = 30
+        };
+
+        var selected = MealPlannerService.PickSurpriseRecipe(
+            [recipe],
+            settings,
+            new DateOnly(2026, 7, 30),
+            new HashSet<int>(),
+            new Random(42));
+
+        Assert.Null(selected);
+    }
 }
