@@ -44,6 +44,38 @@ Voraussetzung ist ein Modell, das Synology Container Manager unterstützt.
 
 Der PostgreSQL-Port wird nicht nach außen veröffentlicht. Anmeldeschlüssel bleiben über das Volume `mealprep-keys` auch bei Container-Neustarts erhalten.
 
+## Versioniertes Docker-Image als TAR erstellen
+
+Der Cake-Build ermittelt die aktuelle Version mit GitVersion, baut
+`mealprep-app:<version>` und exportiert dieses Image anschließend als TAR-Datei.
+Der Build verwendet das dateibasierte Cake.Sdk für .NET 10. Die Cake-Version ist
+direkt in `build.cs` festgeschrieben. GitVersion wird durch Cake über
+`InstallTools(...)` bereitgestellt.
+
+```sh
+dotnet build.cs
+```
+
+Die Datei wird unter `artifacts/docker/mealprep-app-<version>.tar` abgelegt und
+kann beispielsweise auf die Synology kopiert und dort geladen werden:
+
+```sh
+docker load -i artifacts/docker/mealprep-app-<version>.tar
+```
+
+Image-Name, Ausgabeordner und Zielplattform lassen sich überschreiben:
+
+```sh
+dotnet build.cs -- --target Docker-Export \
+  --image-name mealprep-app \
+  --output-directory artifacts/docker \
+  --platform linux/amd64
+```
+
+Git-Tags wie `v1.2.3` ergeben das Image `mealprep-app:1.2.3`. Bei noch nicht
+getaggten Commits wird die Build-Metadaten-Version in einen Docker-kompatiblen
+Tag umgewandelt, beispielsweise `0.1.0+12` zu `0.1.0-build.12`.
+
 ## Sicherung
 
 `scripts/backup.sh` erzeugt einen komprimierten, konsistenten PostgreSQL-Dump. Der Ausgabeordner sollte zusätzlich mit Synology Hyper Backup gesichert werden.
