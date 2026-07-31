@@ -233,7 +233,7 @@ services:
       - no-new-privileges:true
 
   app:
-    image: ghcr.io/twenzel/mealprep:0.0.4
+    image: ghcr.io/twenzel/mealprep:latest
     container_name: mealprep-app
     restart: unless-stopped
     depends_on:
@@ -245,8 +245,8 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_HTTP_PORTS: 8080
       ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=mealprep;Username=mealprep;Password=devMealPrep
-      Authentication__FixedCredentials__Username: wenzel
-      Authentication__FixedCredentials__Password: essen123FürAlle!
+      Authentication__FixedCredentials__Username: myfamily
+      Authentication__FixedCredentials__Password: supersecure!
       DataProtection__KeysPath: /keys
       # Optional später aktivieren:
       OPENAI_API_KEY: ""
