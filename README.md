@@ -10,6 +10,7 @@ Eine für das iPhone optimierte, selbst gehostete Essensplanung unter .NET 10.
 - Rezeptverwaltung mit Zutaten und Kochschritten
 - Dauerhafte Rezeptfavoriten mit Filter und bevorzugter Auswahl
 - Instagram-Import aus öffentlichen Post-/Reel-Links oder kopierten Bildunterschriften
+- AI-gestützter Import aus öffentlichen Rezept-Webseiten mit bearbeitbarem Entwurf
 - Rezeptbilder als Binärdaten direkt in PostgreSQL
 - Optional erzeugte Rezeptbilder per AI aus Name und Zutaten
 - Automatisch aggregierte und dauerhaft abhakbare Einkaufsliste
@@ -21,6 +22,11 @@ Eine für das iPhone optimierte, selbst gehostete Essensplanung unter .NET 10.
 Automatische Vorschläge berücksichtigen Ernährungsform, Allergien, ausgeschlossene Zutaten, bevorzugte Rezept-Tags, Standardportionen sowie getrennte Zeitlimits für Werktage und Wochenende.
 
 Beim Instagram-Import entsteht immer zuerst ein bearbeitbarer Entwurf. Falls Instagram die öffentliche Bildunterschrift nicht ausliefert, kann der Text direkt aus der Instagram-App kopiert und eingefügt werden. Ein Instagram-Login oder Zugriffstoken ist nicht erforderlich; Bilder werden nur gespeichert, wenn sie selbst hochgeladen werden.
+
+Beim Webseiten-Import lädt die App eine öffentliche HTTPS-Rezeptseite, liest
+vorhandene Recipe-JSON-LD-Daten sowie sichtbaren Rezepttext aus und lässt die
+Informationen per AI in Beschreibung, Zutaten und Arbeitsschritte aufteilen.
+Auch hier wird zunächst nur ein bearbeitbarer Entwurf erzeugt.
 
 ![Screenshot](./preview.png "preview")
 
@@ -46,11 +52,14 @@ Für Docker Compose werden diese Werte in der nicht eingecheckten `.env`-Datei
 gesetzt:
 
 ```dotenv
+OPENAI_API_KEY=hier-den-api-key-eintragen
 AI_RECIPE_IMAGES_ENABLED=true
 AI_RECIPE_IMAGES_MODEL=gpt-image-1
-AI_RECIPE_IMAGES_API_KEY=hier-den-api-key-eintragen
 AI_RECIPE_IMAGES_MEDIA_TYPE=image/png
 ```
+
+`AI_RECIPE_IMAGES_API_KEY` kann weiterhin gesetzt werden, falls für die
+Bildgenerierung ein anderer Key als `OPENAI_API_KEY` verwendet werden soll.
 
 Alternativ stehen in `appsettings.json` die gleichnamigen Einstellungen unter
 `AI:RecipeImages` zur Verfügung. API-Keys sollten nicht in das Repository oder
@@ -58,6 +67,37 @@ in Docker-Build-Argumente geschrieben werden. Beim Erzeugen werden Rezeptname,
 Beschreibung und Zutaten an den konfigurierten AI-Anbieter übertragen. Das
 Ergebnis erscheint zunächst nur als Vorschau und wird erst beim Speichern des
 Rezepts als Binärdaten in PostgreSQL abgelegt.
+
+## Optionaler Rezeptimport von Webseiten
+
+Über das Kettensymbol auf der Rezeptseite kann eine öffentliche Rezept-URL
+importiert werden. Die App extrahiert bevorzugt strukturierte Recipe-Daten und
+ergänzend den sichtbaren Seitentext. Anschließend ordnet das konfigurierte
+Sprachmodell die Inhalte den Rezeptfeldern zu. Der Entwurf kann vollständig
+bearbeitet werden und wird erst mit **Rezept speichern** in PostgreSQL abgelegt.
+
+Für Docker Compose werden der gemeinsame OpenAI-Key und die Funktion in `.env`
+aktiviert:
+
+```dotenv
+OPENAI_API_KEY=hier-den-api-key-eintragen
+AI_RECIPE_IMPORT_ENABLED=true
+AI_RECIPE_IMPORT_MODEL=gpt-5.6-terra
+```
+
+Alternativ stehen die Einstellungen in `appsettings.json` unter `AI:OpenAI`
+und `AI:RecipeImport` zur Verfügung. Unterstützt werden ausschließlich
+öffentliche HTTPS-Seiten auf dem Standardport. Lokale, private und reservierte
+Netzadressen werden auch nach DNS-Auflösung sowie bei Weiterleitungen
+abgewiesen. HTML, Rezepttext und Bilder unterliegen Größen- und Zeitlimits.
+
+Für die strukturierte Auswertung werden URL, Seitentitel, Seitenbeschreibung,
+gefundene Recipe-Daten und bereinigter Rezepttext an OpenAI übertragen. Bis zu
+drei gefundene Bildkandidaten werden nur serverseitig geprüft. Ein Bild landet
+erst dann dauerhaft in der Datenbank, wenn es im Entwurf ausdrücklich
+übernommen und das Rezept gespeichert wird. Seiten hinter Login, rein
+JavaScript-gerenderte Inhalte und Seiten, die automatisierte Zugriffe sperren,
+können nicht zuverlässig importiert werden.
 
 ## Fester Benutzername und festes Passwort
 

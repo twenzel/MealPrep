@@ -19,6 +19,16 @@ CultureInfo.DefaultThreadCurrentUICulture = germanCulture;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var openAIProvider = builder.Configuration
+    .GetSection(OpenAIProviderOptions.SectionName)
+    .Get<OpenAIProviderOptions>() ?? new();
+if (string.IsNullOrWhiteSpace(openAIProvider.ApiKey))
+{
+    openAIProvider.ApiKey = builder.Configuration["OPENAI_API_KEY"];
+}
+
+builder.Services.AddSingleton(openAIProvider);
+
 var fixedCredentials = builder.Configuration
     .GetSection(FixedCredentialsOptions.SectionName)
     .Get<FixedCredentialsOptions>() ?? new();
@@ -33,6 +43,11 @@ if (fixedCredentials.IsEnabled)
 var recipeImageGeneration = builder.Configuration
     .GetSection(RecipeImageGenerationOptions.SectionName)
     .Get<RecipeImageGenerationOptions>() ?? new();
+if (string.IsNullOrWhiteSpace(recipeImageGeneration.ApiKey))
+{
+    recipeImageGeneration.ApiKey = openAIProvider.ApiKey;
+}
+
 recipeImageGeneration.ValidateConfiguration();
 builder.Services.AddSingleton(recipeImageGeneration);
 #pragma warning disable MEAI001
@@ -45,6 +60,25 @@ if (recipeImageGeneration.IsAvailable)
 }
 #pragma warning restore MEAI001
 builder.Services.AddSingleton<IRecipeImageGenerator, RecipeImageGenerationService>();
+
+var recipeWebImport = builder.Configuration
+    .GetSection(RecipeWebImportOptions.SectionName)
+    .Get<RecipeWebImportOptions>() ?? new();
+recipeWebImport.ValidateConfiguration();
+builder.Services.AddSingleton(recipeWebImport);
+if (recipeWebImport.IsAvailable(openAIProvider))
+{
+#pragma warning disable OPENAI001
+    builder.Services.AddSingleton<IChatClient>(_ =>
+        new OpenAIClient(openAIProvider.ApiKey!)
+            .GetResponsesClient()
+            .AsIChatClient(recipeWebImport.Model));
+#pragma warning restore OPENAI001
+}
+
+builder.Services.AddSingleton<RecipePageExtractor>();
+builder.Services.AddSingleton<SafeWebContentFetcher>();
+builder.Services.AddSingleton<IRecipeWebImporter, RecipeWebImportService>();
 
 var dataProtectionPath = builder.Configuration["DataProtection:KeysPath"];
 if (!string.IsNullOrWhiteSpace(dataProtectionPath))
@@ -82,6 +116,13 @@ builder.Services.AddHttpClient("instagram-import", client =>
                                  DecompressionMethods.GZip |
                                  DecompressionMethods.Deflate
     });
+builder.Services.AddHttpClient(SafeWebContentFetcher.HttpClientName, client =>
+    {
+        client.Timeout = Timeout.InfiniteTimeSpan;
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mahlzeit/1.0 (+self-hosted recipe importer)");
+    })
+    .ConfigurePrimaryHttpMessageHandler(PublicInternetHttpHandler.Create);
 
 builder.Services.AddAuthentication(options =>
     {

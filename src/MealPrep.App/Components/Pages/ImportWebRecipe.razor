@@ -1,0 +1,368 @@
+@page "/recipes/import/web"
+@attribute [Authorize]
+@implements IDisposable
+@inject IRecipeWebImporter WebImporter
+@inject MealPlannerService Planner
+@inject NavigationManager Navigation
+
+<PageTitle>Von Webseite importieren · Mahlzeit</PageTitle>
+
+<header class="detail-topbar">
+    <button class="icon-button" type="button" @onclick="GoBack" aria-label="Zurück zu den Rezepten">←</button>
+    <span>Webseiten-Import</span>
+    <span class="web-import-header-symbol" aria-hidden="true">⌁</span>
+</header>
+
+@if (draft is null)
+{
+    <section class="instagram-import-hero web-import-hero">
+        <span aria-hidden="true">⌁</span>
+        <div>
+            <p class="eyebrow">Rezept übernehmen</p>
+            <h1>Rezeptseite importieren</h1>
+            <p>Aus einer öffentlichen Rezeptseite wird ein bearbeitbarer Entwurf mit Zutaten, Schritten und optionalem Bild.</p>
+        </div>
+    </section>
+
+    <section class="instagram-import-card">
+        <div class="form-field">
+            <label for="recipe-page-url">Adresse der Rezeptseite</label>
+            <InputText id="recipe-page-url"
+                       @bind-Value="sourceUrl"
+                       inputmode="url"
+                       autocomplete="url"
+                       placeholder="https://www.beispiel.de/mein-rezept" />
+            <small>Unterstützt werden öffentliche HTTPS-Seiten ohne Anmeldung.</small>
+        </div>
+
+        @if (!WebImporter.IsAvailable)
+        {
+            <div class="import-warning" role="status">
+                <span aria-hidden="true">!</span>
+                <p>Der AI-Webseitenimport ist noch nicht aktiviert. Hinterlege später den serverseitigen OpenAI-Key und aktiviere <code>AI_RECIPE_IMPORT_ENABLED</code>.</p>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(importError))
+        {
+            <p class="form-error" role="alert">@importError</p>
+        }
+
+        <button class="button button-primary full-width"
+                type="button"
+                @onclick="ImportRecipe"
+                disabled="@(isImporting || !WebImporter.IsAvailable || string.IsNullOrWhiteSpace(sourceUrl))">
+            @(isImporting ? "Seite wird gelesen und ausgewertet …" : "Rezeptentwurf erstellen")
+            <span aria-hidden="true">→</span>
+        </button>
+
+        <div class="instagram-import-note">
+            <span aria-hidden="true">ⓘ</span>
+            <p>Der Seiteninhalt wird serverseitig geladen. Bereinigter Rezepttext wird zur strukturierten Auswertung an den konfigurierten AI-Anbieter übertragen.</p>
+        </div>
+    </section>
+}
+else
+{
+    <section class="import-result-heading">
+        <div>
+            <p class="eyebrow">Import erkannt</p>
+            <h1>Entwurf prüfen</h1>
+            <p>AI-Ergebnisse können unvollständig sein. Kontrolliere besonders Mengen, Zeiten und Arbeitsschritte.</p>
+        </div>
+        <button class="button button-ghost" type="button" @onclick="ResetImport">Andere Seite wählen</button>
+    </section>
+
+    @if (warnings.Count > 0)
+    {
+        <div class="import-warning import-warning-list" role="status">
+            <span aria-hidden="true">!</span>
+            <div>
+                <strong>Bitte prüfen</strong>
+                <ul>
+                    @foreach (var warning in warnings)
+                    {
+                        <li>@warning</li>
+                    }
+                </ul>
+            </div>
+        </div>
+    }
+
+    <EditForm Model="draft" OnValidSubmit="SaveRecipe" class="recipe-form recipe-editor">
+        <div class="import-source-card">
+            <span aria-hidden="true">⌁</span>
+            <div>
+                <strong>@SourceHost</strong>
+                <a href="@draft.SourceUrl" target="_blank" rel="noopener noreferrer">Originalseite öffnen ↗</a>
+            </div>
+        </div>
+
+        <div class="form-field">
+            <label for="web-recipe-name">Name</label>
+            <InputText id="web-recipe-name"
+                       @bind-Value="draft.Name"
+                       maxlength="160"
+                       required />
+        </div>
+        <div class="form-field">
+            <label for="web-recipe-description">Kurzbeschreibung</label>
+            <InputTextArea id="web-recipe-description"
+                           @bind-Value="draft.Description"
+                           maxlength="600" />
+        </div>
+        <div class="form-row">
+            <div class="form-field">
+                <label for="web-prep-time">Vorbereitung</label>
+                <InputNumber id="web-prep-time" @bind-Value="draft.PrepMinutes" min="0" max="720" />
+            </div>
+            <div class="form-field">
+                <label for="web-cook-time">Kochen</label>
+                <InputNumber id="web-cook-time" @bind-Value="draft.CookMinutes" min="0" max="720" />
+            </div>
+            <div class="form-field">
+                <label for="web-servings">Portionen</label>
+                <InputNumber id="web-servings" @bind-Value="draft.Servings" min="1" max="12" />
+            </div>
+        </div>
+        <div class="form-field">
+            <label for="web-recipe-tags">Tags</label>
+            <InputText id="web-recipe-tags" @bind-Value="draft.Tags" maxlength="400" />
+        </div>
+        <div class="form-field">
+            <label for="web-ingredients">Zutaten</label>
+            <InputTextArea id="web-ingredients"
+                           @bind-Value="draft.Ingredients"
+                           placeholder="200 | g | Mehl | Backen" />
+            <small>Eine Zutat pro Zeile: Menge | Einheit | Name | Abteilung</small>
+        </div>
+        <div class="form-field">
+            <label for="web-steps">Zubereitung</label>
+            <InputTextArea id="web-steps"
+                           @bind-Value="draft.Steps"
+                           placeholder="Ein Arbeitsschritt pro Zeile" />
+            <small>Ein Arbeitsschritt pro Zeile</small>
+        </div>
+
+        @if (suggestedImage is not null && draft.ImageData is null)
+        {
+            <section class="web-image-suggestion" aria-label="Gefundenes Rezeptbild">
+                <img src="@suggestedImage.DataUrl" alt="Auf der Rezeptseite gefundenes Bild" />
+                <div>
+                    <strong>Bild auf der Seite gefunden</strong>
+                    <small>Es wird erst nach deiner Auswahl und dem Speichern dauerhaft übernommen.</small>
+                </div>
+                <div class="web-image-actions">
+                    <button class="button button-ghost" type="button" @onclick="DismissSuggestedImage">Nicht verwenden</button>
+                    <button class="button button-primary" type="button" @onclick="UseSuggestedImage">Bild übernehmen</button>
+                </div>
+            </section>
+        }
+
+        @if (draft.ImageData is not null && imagePreviewUrl is not null)
+        {
+            <div class="editor-image-preview">
+                <img src="@imagePreviewUrl" alt="Ausgewähltes Rezeptfoto" />
+                <div>
+                    <strong>Rezeptbild</strong>
+                    <small>Wird mit dem Rezept in PostgreSQL gespeichert.</small>
+                </div>
+                <button class="icon-button" type="button" @onclick="RemoveImage" aria-label="Rezeptfoto entfernen">×</button>
+            </div>
+        }
+
+        <RecipeImageGeneratorButton Draft="draft" OnImageGenerated="RefreshImagePreview" />
+
+        <label class="image-upload">
+            <InputFile OnChange="HandleImage" accept="image/jpeg,image/png,image/webp" />
+            <span class="upload-symbol">@(draft.ImageData is null ? "＋" : "↻")</span>
+            <span>
+                <strong>@(draft.ImageData is null ? "Eigenes Foto hinzufügen" : "Foto ersetzen")</strong>
+                <small>JPEG, PNG oder WebP · max. 4 MB</small>
+            </span>
+        </label>
+
+        @if (!string.IsNullOrWhiteSpace(formError))
+        {
+            <p class="form-error" role="alert">@formError</p>
+        }
+
+        <div class="editor-actions">
+            <button class="button button-ghost" type="button" @onclick="ResetImport">Zurück</button>
+            <button class="button button-primary" type="submit" disabled="@isSaving">
+                @(isSaving ? "Wird gespeichert …" : "Rezept speichern")
+            </button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private static readonly HashSet<string> AllowedImageTypes =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+        };
+
+    private string sourceUrl = string.Empty;
+    private RecipeDraft? draft;
+    private ImportedRecipeImage? suggestedImage;
+    private IReadOnlyList<string> warnings = [];
+    private bool isImporting;
+    private bool isSaving;
+    private string? importError;
+    private string? formError;
+    private string? imagePreviewUrl;
+    private CancellationTokenSource? importCancellation;
+
+    private string SourceHost =>
+        Uri.TryCreate(draft?.SourceUrl, UriKind.Absolute, out var uri)
+            ? uri.Host
+            : "Originalquelle";
+
+    private async Task ImportRecipe()
+    {
+        isImporting = true;
+        importError = null;
+        importCancellation?.Cancel();
+        importCancellation?.Dispose();
+        importCancellation = new CancellationTokenSource();
+        try
+        {
+            var result = await WebImporter.ImportAsync(sourceUrl, importCancellation.Token);
+            if (!result.IsSuccess || result.Draft is null)
+            {
+                importError = result.Error ?? "Die Rezeptseite konnte nicht importiert werden.";
+                return;
+            }
+
+            draft = result.Draft;
+            suggestedImage = result.SuggestedImage;
+            warnings = result.Warnings;
+        }
+        catch (OperationCanceledException)
+        {
+            // Navigation or a new import canceled the current request.
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+
+    private void UseSuggestedImage()
+    {
+        if (draft is null || suggestedImage is null)
+        {
+            return;
+        }
+
+        draft.ImageData = suggestedImage.Data;
+        draft.ImageContentType = suggestedImage.MediaType;
+        imagePreviewUrl = suggestedImage.DataUrl;
+        suggestedImage = null;
+    }
+
+    private void DismissSuggestedImage() => suggestedImage = null;
+
+    private async Task HandleImage(InputFileChangeEventArgs eventArgs)
+    {
+        if (draft is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var file = eventArgs.File;
+            if (!AllowedImageTypes.Contains(file.ContentType))
+            {
+                formError = "Bitte ein Bild im Format JPEG, PNG oder WebP auswählen.";
+                return;
+            }
+
+            await using var stream = file.OpenReadStream(4 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            draft.ImageData = memory.ToArray();
+            draft.ImageContentType = file.ContentType;
+            imagePreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(draft.ImageData)}";
+            suggestedImage = null;
+            formError = null;
+        }
+        catch (IOException)
+        {
+            formError = "Das Bild ist größer als 4 MB.";
+        }
+    }
+
+    private void RemoveImage()
+    {
+        if (draft is null)
+        {
+            return;
+        }
+
+        draft.ImageData = null;
+        draft.ImageContentType = null;
+        imagePreviewUrl = null;
+        formError = null;
+    }
+
+    private void RefreshImagePreview()
+    {
+        if (draft?.ImageData is not null && !string.IsNullOrWhiteSpace(draft.ImageContentType))
+        {
+            imagePreviewUrl = $"data:{draft.ImageContentType};base64,{Convert.ToBase64String(draft.ImageData)}";
+        }
+
+        suggestedImage = null;
+        formError = null;
+    }
+
+    private async Task SaveRecipe()
+    {
+        if (draft is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(draft.Name) ||
+            string.IsNullOrWhiteSpace(draft.Ingredients) ||
+            string.IsNullOrWhiteSpace(draft.Steps))
+        {
+            formError = "Bitte Name, Zutaten und Zubereitung ausfüllen.";
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            var id = await Planner.AddRecipeAsync(draft);
+            Navigation.NavigateTo($"/recipes/{id}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ResetImport()
+    {
+        draft = null;
+        suggestedImage = null;
+        warnings = [];
+        importError = null;
+        formError = null;
+        imagePreviewUrl = null;
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/recipes");
+
+    public void Dispose()
+    {
+        importCancellation?.Cancel();
+        importCancellation?.Dispose();
+    }
+}
