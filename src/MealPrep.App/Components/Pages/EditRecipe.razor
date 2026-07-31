@@ -100,6 +100,8 @@ else
             </div>
         }
 
+        <RecipeImageGeneratorButton Draft="draft" OnImageGenerated="RefreshImagePreview" />
+
         <label class="image-upload">
             <InputFile OnChange="HandleImage" accept="image/jpeg,image/png,image/webp" />
             <span class="upload-symbol">@(draft.ImageData is null ? "＋" : "↻")</span>
@@ -183,6 +185,16 @@ else
         draft.ImageData = null;
         draft.ImageContentType = null;
         imagePreviewUrl = null;
+        formError = null;
+    }
+
+    private void RefreshImagePreview()
+    {
+        if (draft.ImageData is not null && !string.IsNullOrWhiteSpace(draft.ImageContentType))
+        {
+            imagePreviewUrl = $"data:{draft.ImageContentType};base64,{Convert.ToBase64String(draft.ImageData)}";
+        }
+
         formError = null;
     }
 

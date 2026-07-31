@@ -11,6 +11,7 @@ Eine für das iPhone optimierte, selbst gehostete Essensplanung unter .NET 10.
 - Dauerhafte Rezeptfavoriten mit Filter und bevorzugter Auswahl
 - Instagram-Import aus öffentlichen Post-/Reel-Links oder kopierten Bildunterschriften
 - Rezeptbilder als Binärdaten direkt in PostgreSQL
+- Optional erzeugte Rezeptbilder per AI aus Name und Zutaten
 - Automatisch aggregierte und dauerhaft abhakbare Einkaufsliste
 - Schrittweiser Kochmodus mit optionaler Bildschirm-Wachhaltung
 - Anmeldung mit ASP.NET Core Identity, optional per Passkey oder festem Serverzugang
@@ -32,6 +33,31 @@ Beim Instagram-Import entsteht immer zuerst ein bearbeitbarer Entwurf. Falls Ins
    den ersten Zugang registrieren („Ersten Haushalt anlegen“).
 
 Die Datenbankmigrationen und die Beispieldaten werden beim ersten Start automatisch angelegt.
+
+## Optionale AI-Rezeptbilder
+
+Beim Anlegen, Bearbeiten und Importieren eines Rezepts kann die App aus Name
+und Zutaten ein Bild erzeugen. Die Funktion verwendet serverseitig
+`Microsoft.Extensions.AI` mit dem OpenAI-Bildanbieter. Sie ist standardmäßig
+deaktiviert; ohne API-Key wird kein Button angezeigt und es findet kein
+externer Aufruf statt.
+
+Für Docker Compose werden diese Werte in der nicht eingecheckten `.env`-Datei
+gesetzt:
+
+```dotenv
+AI_RECIPE_IMAGES_ENABLED=true
+AI_RECIPE_IMAGES_MODEL=gpt-image-1
+AI_RECIPE_IMAGES_API_KEY=hier-den-api-key-eintragen
+AI_RECIPE_IMAGES_MEDIA_TYPE=image/png
+```
+
+Alternativ stehen in `appsettings.json` die gleichnamigen Einstellungen unter
+`AI:RecipeImages` zur Verfügung. API-Keys sollten nicht in das Repository oder
+in Docker-Build-Argumente geschrieben werden. Beim Erzeugen werden Rezeptname,
+Beschreibung und Zutaten an den konfigurierten AI-Anbieter übertragen. Das
+Ergebnis erscheint zunächst nur als Vorschau und wird erst beim Speichern des
+Rezepts als Binärdaten in PostgreSQL abgelegt.
 
 ## Fester Benutzername und festes Passwort
 

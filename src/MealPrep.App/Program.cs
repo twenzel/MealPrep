@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
+using OpenAI;
 
 var germanCulture = CultureInfo.GetCultureInfo("de-DE");
 CultureInfo.DefaultThreadCurrentCulture = germanCulture;
@@ -27,6 +29,22 @@ if (fixedCredentials.IsEnabled)
     builder.Services.Configure<SecurityStampValidatorOptions>(options =>
         options.ValidationInterval = TimeSpan.Zero);
 }
+
+var recipeImageGeneration = builder.Configuration
+    .GetSection(RecipeImageGenerationOptions.SectionName)
+    .Get<RecipeImageGenerationOptions>() ?? new();
+recipeImageGeneration.ValidateConfiguration();
+builder.Services.AddSingleton(recipeImageGeneration);
+#pragma warning disable MEAI001
+if (recipeImageGeneration.IsAvailable)
+{
+    builder.Services.AddSingleton<IImageGenerator>(_ =>
+        new OpenAIClient(recipeImageGeneration.ApiKey!)
+            .GetImageClient(recipeImageGeneration.Model)
+            .AsIImageGenerator());
+}
+#pragma warning restore MEAI001
+builder.Services.AddSingleton<IRecipeImageGenerator, RecipeImageGenerationService>();
 
 var dataProtectionPath = builder.Configuration["DataProtection:KeysPath"];
 if (!string.IsNullOrWhiteSpace(dataProtectionPath))

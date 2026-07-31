@@ -125,11 +125,26 @@ else
                                    placeholder="Gemüse schneiden.&#10;Alles zusammen anbraten.&#10;Abschmecken und servieren." />
                     <small>Ein Arbeitsschritt pro Zeile</small>
                 </div>
+
+                @if (draft.ImageData is not null && imagePreviewUrl is not null)
+                {
+                    <div class="editor-image-preview">
+                        <img src="@imagePreviewUrl" alt="Ausgewähltes Rezeptfoto" />
+                        <div>
+                            <strong>Rezeptbild</strong>
+                            <small>Wird beim Speichern in PostgreSQL abgelegt.</small>
+                        </div>
+                        <button class="icon-button" type="button" @onclick="RemoveImage" aria-label="Rezeptfoto entfernen">×</button>
+                    </div>
+                }
+
+                <RecipeImageGeneratorButton Draft="draft" OnImageGenerated="RefreshImagePreview" />
+
                 <label class="image-upload">
                     <InputFile OnChange="HandleImage" accept="image/jpeg,image/png,image/webp" />
-                    <span class="upload-symbol">@((draft.ImageData is null) ? "＋" : "✓")</span>
+                    <span class="upload-symbol">@(draft.ImageData is null ? "＋" : "↻")</span>
                     <span>
-                        <strong>@((draft.ImageData is null) ? "Foto hinzufügen" : "Foto ausgewählt")</strong>
+                        <strong>@(draft.ImageData is null ? "Foto hinzufügen" : "Foto ersetzen")</strong>
                         <small>Das Bild wird direkt in PostgreSQL gespeichert · max. 4 MB</small>
                     </span>
                 </label>
@@ -146,6 +161,14 @@ else
 }
 
 @code {
+    private static readonly HashSet<string> AllowedImageTypes =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+        };
+
     private readonly string[] Tags = ["Alle", "Favoriten", "Schnell", "Vegetarisch", "Meal Prep"];
     private List<Recipe> recipes = [];
     private string activeTag = "Alle";
@@ -154,6 +177,7 @@ else
     private bool showAddRecipe;
     private bool isSaving;
     private string? formError;
+    private string? imagePreviewUrl;
     private RecipeDraft draft = CreateDraft();
 
     private List<Recipe> FilteredRecipes => recipes
@@ -209,17 +233,42 @@ else
         try
         {
             var file = eventArgs.File;
+            if (!AllowedImageTypes.Contains(file.ContentType))
+            {
+                formError = "Bitte ein Bild im Format JPEG, PNG oder WebP auswählen.";
+                return;
+            }
+
             await using var stream = file.OpenReadStream(4 * 1024 * 1024);
             using var memory = new MemoryStream();
             await stream.CopyToAsync(memory);
             draft.ImageData = memory.ToArray();
             draft.ImageContentType = file.ContentType;
+            imagePreviewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(draft.ImageData)}";
             formError = null;
         }
         catch (IOException)
         {
             formError = "Das Bild ist größer als 4 MB.";
         }
+    }
+
+    private void RefreshImagePreview()
+    {
+        if (draft.ImageData is not null && !string.IsNullOrWhiteSpace(draft.ImageContentType))
+        {
+            imagePreviewUrl = $"data:{draft.ImageContentType};base64,{Convert.ToBase64String(draft.ImageData)}";
+        }
+
+        formError = null;
+    }
+
+    private void RemoveImage()
+    {
+        draft.ImageData = null;
+        draft.ImageContentType = null;
+        imagePreviewUrl = null;
+        formError = null;
     }
 
     private async Task SaveRecipe()
@@ -236,6 +285,7 @@ else
         var id = await Planner.AddRecipeAsync(draft);
         showAddRecipe = false;
         draft = CreateDraft();
+        imagePreviewUrl = null;
         await LoadRecipes();
         isSaving = false;
         Navigation.NavigateTo($"/recipes/{id}");

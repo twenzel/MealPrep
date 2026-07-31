@@ -1,0 +1,111 @@
+@implements IDisposable
+@inject IRecipeImageGenerator ImageGenerator
+
+@if (ImageGenerator.IsAvailable)
+{
+    <section class="ai-image-generator" aria-label="KI-Rezeptbild">
+        @if (confirmReplacement)
+        {
+            <div class="ai-image-confirm" role="alert">
+                <span>Das vorhandene Bild wird in diesem Entwurf ersetzt.</span>
+                <div>
+                    <button class="button button-ghost" type="button" @onclick="CancelReplacement">Abbrechen</button>
+                    <button class="button button-ai" type="button" @onclick="GenerateImage" disabled="@isGenerating">Ersetzen</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <button class="button button-ai full-width"
+                    type="button"
+                    @onclick="RequestGeneration"
+                    disabled="@(isGenerating || !CanGenerate)">
+                <span aria-hidden="true">✦</span>
+                @(isGenerating ? "Bild wird erzeugt …" : Draft.ImageData is null ? "Bild mit KI erzeugen" : "Neues KI-Bild erzeugen")
+            </button>
+            <small>Name und Zutaten werden an den konfigurierten AI-Anbieter übertragen.</small>
+        }
+
+        @if (!CanGenerate && !isGenerating)
+        {
+            <p class="ai-image-hint">Bitte zuerst Rezeptname und Zutaten ausfüllen.</p>
+        }
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <p class="form-error" role="alert">@error</p>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public RecipeDraft Draft { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback OnImageGenerated { get; set; }
+
+    private CancellationTokenSource? cancellation;
+    private bool isGenerating;
+    private bool confirmReplacement;
+    private string? error;
+
+    private bool CanGenerate =>
+        !string.IsNullOrWhiteSpace(Draft.Name) &&
+        !string.IsNullOrWhiteSpace(Draft.Ingredients);
+
+    private async Task RequestGeneration()
+    {
+        error = null;
+        if (!CanGenerate)
+        {
+            return;
+        }
+
+        if (Draft.ImageData is not null)
+        {
+            confirmReplacement = true;
+            return;
+        }
+
+        await GenerateImage();
+    }
+
+    private async Task GenerateImage()
+    {
+        confirmReplacement = false;
+        isGenerating = true;
+        error = null;
+        cancellation?.Dispose();
+        cancellation = new CancellationTokenSource();
+
+        try
+        {
+            var result = await ImageGenerator.GenerateAsync(Draft, cancellation.Token);
+            if (!result.IsSuccess || result.ImageData is null || result.MediaType is null)
+            {
+                error = result.Error ?? "Das Bild konnte nicht erzeugt werden.";
+                return;
+            }
+
+            Draft.ImageData = result.ImageData;
+            Draft.ImageContentType = result.MediaType;
+            await OnImageGenerated.InvokeAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // The component was disposed while generation was in progress.
+        }
+        finally
+        {
+            isGenerating = false;
+        }
+    }
+
+    private void CancelReplacement() => confirmReplacement = false;
+
+    public void Dispose()
+    {
+        cancellation?.Cancel();
+        cancellation?.Dispose();
+    }
+}

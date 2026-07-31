@@ -142,12 +142,14 @@ else
             <div class="editor-image-preview">
                 <img src="@imagePreviewUrl" alt="Ausgewähltes Rezeptfoto" />
                 <div>
-                    <strong>Eigenes Foto</strong>
+                    <strong>Rezeptbild</strong>
                     <small>Wird mit dem Rezept gespeichert.</small>
                 </div>
                 <button class="icon-button" type="button" @onclick="RemoveImage" aria-label="Rezeptfoto entfernen">×</button>
             </div>
         }
+
+        <RecipeImageGeneratorButton Draft="draft" OnImageGenerated="RefreshImagePreview" />
 
         <label class="image-upload">
             <InputFile OnChange="HandleImage" accept="image/jpeg,image/png,image/webp" />
@@ -255,6 +257,16 @@ else
         draft.ImageData = null;
         draft.ImageContentType = null;
         imagePreviewUrl = null;
+    }
+
+    private void RefreshImagePreview()
+    {
+        if (draft?.ImageData is not null && !string.IsNullOrWhiteSpace(draft.ImageContentType))
+        {
+            imagePreviewUrl = $"data:{draft.ImageContentType};base64,{Convert.ToBase64String(draft.ImageData)}";
+        }
+
+        formError = null;
     }
 
     private async Task SaveRecipe()

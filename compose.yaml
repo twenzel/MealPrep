@@ -51,6 +51,10 @@ services:
       DataProtection__KeysPath: /keys
       Authentication__FixedCredentials__Username: "${MEALPREP_USERNAME:-}"
       Authentication__FixedCredentials__Password: "${MEALPREP_PASSWORD:-}"
+      AI__RecipeImages__Enabled: "${AI_RECIPE_IMAGES_ENABLED:-false}"
+      AI__RecipeImages__Model: "${AI_RECIPE_IMAGES_MODEL:-gpt-image-1}"
+      AI__RecipeImages__ApiKey: "${AI_RECIPE_IMAGES_API_KEY:-}"
+      AI__RecipeImages__MediaType: "${AI_RECIPE_IMAGES_MEDIA_TYPE:-image/png}"
       TZ: Europe/Berlin
     ports:
       - "${APP_PORT:-8088}:8080"

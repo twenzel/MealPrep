@@ -1117,6 +1117,48 @@ h2 {
     font-size: 0.66rem;
 }
 
+.ai-image-generator {
+    display: grid;
+    gap: 8px;
+    padding: 13px;
+    border: 1px solid rgba(49, 93, 73, 0.2);
+    border-radius: 17px;
+    background: linear-gradient(135deg, #f0f6f1, #f7f2e8);
+}
+
+.ai-image-generator > small,
+.ai-image-hint {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.68rem;
+    line-height: 1.4;
+}
+
+.button-ai {
+    justify-content: center;
+    border-color: rgba(49, 93, 73, 0.24);
+    background: var(--surface);
+    color: var(--green);
+}
+
+.button-ai:disabled {
+    cursor: wait;
+    opacity: 0.62;
+}
+
+.ai-image-confirm {
+    display: grid;
+    gap: 10px;
+    color: var(--ink);
+    font-size: 0.78rem;
+}
+
+.ai-image-confirm > div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
 .form-error {
     margin: 0;
     color: #a74335;
