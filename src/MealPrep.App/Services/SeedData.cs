@@ -144,7 +144,8 @@ public static class SeedData
             PlannedLunchesPerWeek = 5,
             AvoidRepeatsWithinDays = 14,
             DietPreference = "Alles",
-            PreferredTags = "schnell, meal prep"
+            PreferredTags = "schnell, meal prep",
+            PantryStaples = "Salz, Pfeffer, Öl, Wasser, Gewürze"
         });
         await db.SaveChangesAsync();
 

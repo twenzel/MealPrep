@@ -226,6 +226,14 @@ else
                                            @bind-Value="settings.ExcludedIngredients"
                                            placeholder="z. B. Koriander, Pilze" />
                         </div>
+                        <div class="form-field">
+                            <label for="pantry-staples">Immer vorhandene Vorräte</label>
+                            <InputTextArea id="pantry-staples"
+                                           @bind-Value="settings.PantryStaples"
+                                           maxlength="800"
+                                           placeholder="z. B. Salz, Pfeffer, Öl, Wasser, Gewürze" />
+                            <small>Diese Basics müssen auf einem Kühlschrankfoto nicht sichtbar sein.</small>
+                        </div>
                     }
                     else if (activePanel is SettingsPanel.CookingTimes)
                     {

@@ -50,6 +50,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.Property(settings => settings.PreferredTags).HasMaxLength(600);
             entity.Property(settings => settings.Allergies).HasMaxLength(800);
             entity.Property(settings => settings.ExcludedIngredients).HasMaxLength(800);
+            entity.Property(settings => settings.PantryStaples).HasMaxLength(800);
         });
     }
 }

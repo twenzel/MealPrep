@@ -144,6 +144,7 @@ public sealed class MealPlannerService(IDbContextFactory<ApplicationDbContext> d
         settings.PreferredTags = NormalizeList(input.PreferredTags);
         settings.Allergies = NormalizeList(input.Allergies);
         settings.ExcludedIngredients = NormalizeList(input.ExcludedIngredients);
+        settings.PantryStaples = NormalizeList(input.PantryStaples);
 
         await db.SaveChangesAsync();
         return await db.HouseholdSettings.AsNoTracking().SingleAsync();

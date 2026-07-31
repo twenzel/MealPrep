@@ -66,19 +66,19 @@ var recipeWebImport = builder.Configuration
     .Get<RecipeWebImportOptions>() ?? new();
 recipeWebImport.ValidateConfiguration();
 builder.Services.AddSingleton(recipeWebImport);
-if (recipeWebImport.IsAvailable(openAIProvider))
-{
-#pragma warning disable OPENAI001
-    builder.Services.AddSingleton<IChatClient>(_ =>
-        new OpenAIClient(openAIProvider.ApiKey!)
-            .GetResponsesClient()
-            .AsIChatClient(recipeWebImport.Model));
-#pragma warning restore OPENAI001
-}
+builder.Services.AddSingleton<IOpenAIChatClientFactory, OpenAIChatClientFactory>();
 
 builder.Services.AddSingleton<RecipePageExtractor>();
 builder.Services.AddSingleton<SafeWebContentFetcher>();
 builder.Services.AddSingleton<IRecipeWebImporter, RecipeWebImportService>();
+
+var fridgeVision = builder.Configuration
+    .GetSection(FridgeVisionOptions.SectionName)
+    .Get<FridgeVisionOptions>() ?? new();
+fridgeVision.ValidateConfiguration();
+builder.Services.AddSingleton(fridgeVision);
+builder.Services.AddSingleton<IFridgeVisionAnalyzer, FridgeVisionService>();
+builder.Services.AddSingleton<FridgeRecipeMatcher>();
 
 var dataProtectionPath = builder.Configuration["DataProtection:KeysPath"];
 if (!string.IsNullOrWhiteSpace(dataProtectionPath))

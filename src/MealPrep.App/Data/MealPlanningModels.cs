@@ -150,4 +150,7 @@ public sealed class HouseholdSettings
 
     [MaxLength(800)]
     public string ExcludedIngredients { get; set; } = string.Empty;
+
+    [MaxLength(800)]
+    public string PantryStaples { get; set; } = "Salz, Pfeffer, Öl, Wasser, Gewürze";
 }

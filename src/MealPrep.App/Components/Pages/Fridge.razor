@@ -1,0 +1,472 @@
+@page "/fridge"
+@attribute [Authorize]
+@implements IDisposable
+@inject IFridgeVisionAnalyzer VisionAnalyzer
+@inject FridgeVisionOptions VisionOptions
+@inject FridgeRecipeMatcher RecipeMatcher
+@inject MealPlannerService Planner
+
+<PageTitle>Kühlschrank-Check · Mahlzeit</PageTitle>
+
+<header class="page-header fridge-page-header">
+    <div>
+        <p class="eyebrow">Mit AI erkennen</p>
+        <h1>Kühlschrank-Check</h1>
+    </div>
+    <a class="icon-button" href="/recipes" aria-label="Zurück zu den Rezepten">×</a>
+</header>
+
+<section class="fridge-hero">
+    <div class="fridge-hero-icon" aria-hidden="true">▣</div>
+    <div>
+        <h2>Was kann ich daraus kochen?</h2>
+        <p>Fotografiere deinen geöffneten Kühlschrank. Du prüfst die Erkennung, danach zeigt Mahlzeit passende Rezepte.</p>
+    </div>
+</section>
+
+@if (!VisionAnalyzer.IsAvailable)
+{
+    <div class="fridge-config-note" role="status">
+        <span aria-hidden="true">⚙</span>
+        <div>
+            <strong>AI-Erkennung noch nicht aktiviert</strong>
+            <p>Trage später den OpenAI-Schlüssel ein und aktiviere <code>AI:FridgeVision:Enabled</code>. Zutaten kannst du unten schon manuell testen.</p>
+        </div>
+    </div>
+}
+
+<section class="fridge-section">
+    <div class="fridge-section-heading">
+        <div>
+            <span>1</span>
+            <div><strong>Fotos aufnehmen</strong><small>Bis zu @VisionOptions.MaximumImages Blickwinkel</small></div>
+        </div>
+        @if (photos.Count > 0)
+        {
+            <button type="button" @onclick="ClearPhotos">Alle entfernen</button>
+        }
+    </div>
+
+    @if (photos.Count > 0)
+    {
+        <div class="fridge-photo-grid">
+            @for (var index = 0; index < photos.Count; index++)
+            {
+                var photoIndex = index;
+                <div class="fridge-photo">
+                    <img src="@photos[index].DataUrl" alt="Kühlschrankfoto @(index + 1)" />
+                    <button type="button" @onclick="() => RemovePhoto(photoIndex)" aria-label="Foto entfernen">×</button>
+                </div>
+            }
+        </div>
+    }
+
+    @if (photos.Count < VisionOptions.MaximumImages)
+    {
+        <label class="fridge-camera-button @(isReadingPhotos ? "is-busy" : null)">
+            <span aria-hidden="true">◎</span>
+            <strong>@(photos.Count == 0 ? "Kühlschrank fotografieren" : "Weiteres Foto")</strong>
+            <small>Kamera öffnen oder Bild auswählen</small>
+            <InputFile OnChange="HandlePhotos"
+                       accept="image/jpeg,image/png,image/webp"
+                       capture="environment"
+                       multiple
+                       disabled="@isReadingPhotos" />
+        </label>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(photoError))
+    {
+        <p class="fridge-error" role="alert">@photoError</p>
+    }
+
+    <div class="fridge-privacy-note">
+        <span aria-hidden="true">⌾</span>
+        <p>Fotos werden vor dem Senden verkleinert, an OpenAI übertragen und in Mahlzeit weder gespeichert noch in die Datenbank geschrieben.</p>
+    </div>
+
+    <button class="button button-primary full-width fridge-analyze-button"
+            type="button"
+            @onclick="AnalyzePhotos"
+            disabled="@(isAnalyzing || photos.Count == 0 || !VisionAnalyzer.IsAvailable)">
+        @(isAnalyzing ? "Lebensmittel werden erkannt …" : "Lebensmittel erkennen")
+        <span aria-hidden="true">@(isAnalyzing ? "◌" : "→")</span>
+    </button>
+</section>
+
+<section class="fridge-section">
+    <div class="fridge-section-heading">
+        <div>
+            <span>2</span>
+            <div><strong>Erkennung prüfen</strong><small>Fehler lassen sich direkt korrigieren</small></div>
+        </div>
+        @if (detectedItems.Count > 0)
+        {
+            <small>@detectedItems.Count erkannt</small>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(analysisError))
+    {
+        <p class="fridge-error" role="alert">@analysisError</p>
+    }
+
+    @if (warnings.Count > 0)
+    {
+        <div class="fridge-warning-list">
+            @foreach (var warning in warnings)
+            {
+                <p><span aria-hidden="true">!</span>@warning</p>
+            }
+        </div>
+    }
+
+    @if (detectedItems.Count > 0)
+    {
+        <div class="fridge-item-list">
+            @foreach (var item in detectedItems)
+            {
+                <div class="fridge-item-row">
+                    <div>
+                        <input value="@item.Name"
+                               @onchange="eventArgs => UpdateItemName(item, eventArgs.Value?.ToString())"
+                               maxlength="100"
+                               aria-label="Erkannte Zutat bearbeiten" />
+                        @if (!string.IsNullOrWhiteSpace(item.QuantityHint))
+                        {
+                            <small>@item.QuantityHint</small>
+                        }
+                    </div>
+                    <span class="confidence-badge @ConfidenceClass(item.Confidence)">@item.Confidence</span>
+                    <button type="button" @onclick="() => RemoveItem(item)" aria-label="Zutat entfernen">×</button>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="fridge-empty-review">
+            <span aria-hidden="true">🥕</span>
+            <p>Nach der Analyse erscheinen hier die erkannten Lebensmittel. Du kannst auch selbst Zutaten ergänzen.</p>
+        </div>
+    }
+
+    <div class="fridge-manual-add">
+        <input @bind="manualIngredient"
+               @bind:event="oninput"
+               maxlength="100"
+               placeholder="Zutat manuell ergänzen"
+               aria-label="Zutat manuell ergänzen" />
+        <button class="button" type="button" @onclick="AddManualIngredient" disabled="@string.IsNullOrWhiteSpace(manualIngredient)">＋</button>
+    </div>
+</section>
+
+<section class="fridge-section fridge-results-section">
+    <div class="fridge-section-heading">
+        <div>
+            <span>3</span>
+            <div><strong>Passende Rezepte</strong><small>Vorlieben und Ausschlüsse werden beachtet</small></div>
+        </div>
+        @if (recipeMatches.Count > 0)
+        {
+            <small>@recipeMatches.Count Vorschläge</small>
+        }
+    </div>
+
+    @if (detectedItems.Count == 0)
+    {
+        <div class="fridge-no-matches">Bestätige zuerst mindestens eine Zutat.</div>
+    }
+    else if (recipeMatches.Count == 0)
+    {
+        <div class="fridge-no-matches">
+            <strong>Noch kein passendes Rezept</strong>
+            <p>Ergänze weitere Zutaten oder prüfe deine ausgeschlossenen Zutaten in den Einstellungen.</p>
+        </div>
+    }
+    else
+    {
+        <div class="fridge-match-list">
+            @foreach (var match in recipeMatches.Take(12))
+            {
+                <article class="fridge-match-card">
+                    <a class="fridge-match-art" href="@($"/recipes/{match.Recipe.Id}")" style="@($"--meal-accent:{match.Recipe.AccentColor}")">
+                        @if (match.Recipe.ImageData is not null)
+                        {
+                            <img src="@($"/api/recipes/{match.Recipe.Id}/image")" alt="" />
+                        }
+                        else
+                        {
+                            <span>@match.Recipe.Emoji</span>
+                        }
+                    </a>
+                    <div class="fridge-match-copy">
+                        <div class="fridge-match-topline">
+                            <span class="match-status @(match.IsReady ? "is-ready" : null)">@match.MatchLabel</span>
+                            @if (match.Recipe.IsFavorite)
+                            {
+                                <span class="match-favorite" aria-label="Favorit">♥</span>
+                            }
+                        </div>
+                        <h3><a href="@($"/recipes/{match.Recipe.Id}")">@match.Recipe.Name</a></h3>
+                        <p>@match.Recipe.TotalMinutes Min. · @Math.Round(match.Coverage * 100) % abgedeckt</p>
+                        @if (match.MatchedIngredients.Count > 0)
+                        {
+                            <div class="match-ingredients"><strong>Erkannt:</strong> @string.Join(", ", match.MatchedIngredients)</div>
+                        }
+                        @if (match.PantryMatches.Count > 0)
+                        {
+                            <div class="match-ingredients"><strong>Vorrat:</strong> @string.Join(", ", match.PantryMatches)</div>
+                        }
+                        @if (match.MissingIngredients.Count > 0)
+                        {
+                            <div class="match-ingredients is-missing"><strong>Fehlt:</strong> @string.Join(", ", match.MissingIngredients)</div>
+                        }
+                        <div class="fridge-match-actions">
+                            <a class="button" href="@($"/recipes/{match.Recipe.Id}")">Rezept</a>
+                            <button class="button button-primary" type="button" @onclick="() => OpenPlanSheet(match)">Einplanen</button>
+                        </div>
+                    </div>
+                </article>
+            }
+        </div>
+        <p class="fridge-quantity-note">Die Fotoerkennung prüft keine exakten Mengen. Kontrolliere vor dem Kochen die Angaben im Rezept.</p>
+    }
+</section>
+
+@if (planMatch is not null)
+{
+    <div class="sheet-backdrop" @onclick="ClosePlanSheet">
+        <section class="bottom-sheet fridge-plan-sheet" role="dialog" aria-modal="true" aria-label="Rezept einplanen" @onclick:stopPropagation>
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+                <div><p class="eyebrow">Einplanen</p><h2>@planMatch.Recipe.Name</h2></div>
+                <button class="icon-button" type="button" @onclick="ClosePlanSheet" aria-label="Schließen">×</button>
+            </div>
+            <div class="form-field">
+                <label for="fridge-plan-date">Tag</label>
+                <input id="fridge-plan-date" type="date" @bind="planDate" />
+            </div>
+            <fieldset class="form-field fridge-meal-choice">
+                <legend>Mahlzeit</legend>
+                <div class="choice-grid diet-choice">
+                    @foreach (var mealType in MealTypes.All)
+                    {
+                        <button type="button" class="choice-chip @(planMealType == mealType ? "selected" : null)" @onclick="() => planMealType = mealType">@mealType</button>
+                    }
+                </div>
+            </fieldset>
+            <button class="button button-primary full-width" type="button" @onclick="PlanRecipe" disabled="@isPlanning">
+                @(isPlanning ? "Wird eingeplant …" : $"Für {planMealType} einplanen")
+            </button>
+        </section>
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(plannedMessage))
+{
+    <div class="saved-toast" role="status"><span>✓</span> @plannedMessage</div>
+}
+
+@code {
+    private readonly CancellationTokenSource lifetimeCancellation = new();
+    private readonly List<FridgePhoto> photos = [];
+    private readonly List<DetectedFridgeItem> detectedItems = [];
+    private readonly List<string> warnings = [];
+    private List<Recipe> recipes = [];
+    private HouseholdSettings settings = new();
+    private IReadOnlyList<FridgeRecipeMatch> recipeMatches = [];
+    private bool isReadingPhotos;
+    private bool isAnalyzing;
+    private bool isPlanning;
+    private string photoError = string.Empty;
+    private string analysisError = string.Empty;
+    private string manualIngredient = string.Empty;
+    private string plannedMessage = string.Empty;
+    private FridgeRecipeMatch? planMatch;
+    private DateOnly planDate = DateOnly.FromDateTime(DateTime.Today);
+    private string planMealType = MealTypes.Dinner;
+
+    protected override async Task OnInitializedAsync()
+    {
+        recipes = await Planner.GetRecipesAsync();
+        settings = await Planner.GetSettingsAsync();
+    }
+
+    private async Task HandlePhotos(InputFileChangeEventArgs eventArgs)
+    {
+        photoError = string.Empty;
+        isReadingPhotos = true;
+        try
+        {
+            var selectedFiles = eventArgs.GetMultipleFiles(VisionOptions.MaximumImages);
+            foreach (var file in selectedFiles.Take(VisionOptions.MaximumImages - photos.Count))
+            {
+                if (file.Size > VisionOptions.MaximumSourceImageBytes)
+                {
+                    photoError = $"{file.Name} ist zu groß. Erlaubt sind höchstens {VisionOptions.MaximumSourceImageBytes / (1024 * 1024)} MB.";
+                    continue;
+                }
+
+                var resized = await file.RequestImageFileAsync(
+                    "image/jpeg",
+                    VisionOptions.ResizeMaxDimension,
+                    VisionOptions.ResizeMaxDimension);
+                await using var stream = resized.OpenReadStream(VisionOptions.MaximumImageBytes, lifetimeCancellation.Token);
+                using var memory = new MemoryStream();
+                await stream.CopyToAsync(memory, lifetimeCancellation.Token);
+                var data = memory.ToArray();
+                if (ImageContentTypeDetector.Detect(data) != "image/jpeg")
+                {
+                    photoError = $"{file.Name} konnte nicht als Foto verarbeitet werden.";
+                    continue;
+                }
+
+                photos.Add(new FridgePhoto(data, "image/jpeg"));
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            photoError = $"Bitte wähle höchstens {VisionOptions.MaximumImages} Fotos aus.";
+        }
+        catch (Exception exception) when (exception is IOException or JSException)
+        {
+            photoError = "Mindestens ein Foto konnte nicht gelesen werden. Bitte versuche es erneut.";
+        }
+        finally
+        {
+            isReadingPhotos = false;
+        }
+    }
+
+    private async Task AnalyzePhotos()
+    {
+        isAnalyzing = true;
+        analysisError = string.Empty;
+        warnings.Clear();
+        try
+        {
+            var knownIngredients = recipes
+                .SelectMany(recipe => recipe.Ingredients)
+                .Select(ingredient => ingredient.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var result = await VisionAnalyzer.AnalyzeAsync(photos, knownIngredients, lifetimeCancellation.Token);
+            if (!result.IsSuccess)
+            {
+                analysisError = result.Error ?? "Die Fotos konnten nicht ausgewertet werden.";
+                return;
+            }
+
+            detectedItems.Clear();
+            detectedItems.AddRange(result.Items);
+            warnings.AddRange(result.Warnings);
+            RecalculateMatches();
+        }
+        finally
+        {
+            isAnalyzing = false;
+        }
+    }
+
+    private void AddManualIngredient()
+    {
+        var value = manualIngredient.Trim();
+        if (value.Length == 0 || detectedItems.Any(item =>
+                item.Name.Equals(value, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        detectedItems.Add(new DetectedFridgeItem
+        {
+            Name = value,
+            Confidence = FridgeItemConfidence.High
+        });
+        manualIngredient = string.Empty;
+        RecalculateMatches();
+    }
+
+    private void UpdateItemName(DetectedFridgeItem item, string? value)
+    {
+        item.Name = (value ?? string.Empty).Trim();
+        item.CanonicalIngredient = string.Empty;
+        detectedItems.RemoveAll(candidate => string.IsNullOrWhiteSpace(candidate.Name));
+        RecalculateMatches();
+    }
+
+    private void RemoveItem(DetectedFridgeItem item)
+    {
+        detectedItems.Remove(item);
+        RecalculateMatches();
+    }
+
+    private void RecalculateMatches()
+    {
+        var available = detectedItems.Select(item =>
+            string.IsNullOrWhiteSpace(item.CanonicalIngredient)
+                ? item.Name
+                : item.CanonicalIngredient);
+        recipeMatches = RecipeMatcher.Match(
+            recipes,
+            settings,
+            available,
+            DateOnly.FromDateTime(DateTime.Today));
+    }
+
+    private void RemovePhoto(int index)
+    {
+        if (index >= 0 && index < photos.Count)
+        {
+            photos.RemoveAt(index);
+        }
+    }
+
+    private void ClearPhotos() => photos.Clear();
+
+    private void OpenPlanSheet(FridgeRecipeMatch match)
+    {
+        planMatch = match;
+        planDate = DateOnly.FromDateTime(DateTime.Today);
+        planMealType = MealTypes.Dinner;
+    }
+
+    private void ClosePlanSheet() => planMatch = null;
+
+    private async Task PlanRecipe()
+    {
+        if (planMatch is null)
+        {
+            return;
+        }
+
+        isPlanning = true;
+        await Planner.AssignRecipeAsync(planDate, planMealType, planMatch.Recipe.Id);
+        plannedMessage = $"{planMatch.Recipe.Name} wurde eingeplant";
+        planMatch = null;
+        isPlanning = false;
+        try
+        {
+            await Task.Delay(1800, lifetimeCancellation.Token);
+        }
+        catch (OperationCanceledException) when (lifetimeCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        plannedMessage = string.Empty;
+    }
+
+    private static string ConfidenceClass(string confidence) => confidence switch
+    {
+        FridgeItemConfidence.High => "is-high",
+        FridgeItemConfidence.Low => "is-low",
+        _ => "is-medium"
+    };
+
+    public void Dispose()
+    {
+        lifetimeCancellation.Cancel();
+        lifetimeCancellation.Dispose();
+        photos.Clear();
+    }
+}

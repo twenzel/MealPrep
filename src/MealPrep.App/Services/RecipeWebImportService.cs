@@ -15,7 +15,7 @@ public interface IRecipeWebImporter
 }
 
 public sealed class RecipeWebImportService(
-    IServiceProvider services,
+    IOpenAIChatClientFactory chatClientFactory,
     SafeWebContentFetcher fetcher,
     RecipePageExtractor extractor,
     RecipeWebImportOptions options,
@@ -47,7 +47,7 @@ public sealed class RecipeWebImportService(
                     "Auf der Seite wurde kein auslesbarer Rezepttext gefunden.");
             }
 
-            var chatClient = services.GetService<IChatClient>();
+            var chatClient = chatClientFactory.GetClient(options.Model);
             if (chatClient is null)
             {
                 return RecipeWebImportResult.Failure(

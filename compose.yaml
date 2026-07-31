@@ -54,6 +54,8 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       AI__RecipeImport__Enabled: "${AI_RECIPE_IMPORT_ENABLED:-false}"
       AI__RecipeImport__Model: "${AI_RECIPE_IMPORT_MODEL:-gpt-5.6-terra}"
+      AI__FridgeVision__Enabled: "${AI_FRIDGE_VISION_ENABLED:-false}"
+      AI__FridgeVision__Model: "${AI_FRIDGE_VISION_MODEL:-gpt-5.6-terra}"
       AI__RecipeImages__Enabled: "${AI_RECIPE_IMAGES_ENABLED:-false}"
       AI__RecipeImages__Model: "${AI_RECIPE_IMAGES_MODEL:-gpt-image-1}"
       AI__RecipeImages__ApiKey: "${AI_RECIPE_IMAGES_API_KEY:-}"
